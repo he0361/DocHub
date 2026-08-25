@@ -1,0 +1,2 @@
+org.javaup.config.DochubCommonAutoConfig
+org.javaup.database.mybatisplus.MybatisPlusAutoConfiguration

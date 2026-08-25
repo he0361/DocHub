@@ -1,0 +1,154 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+@import 'highlight.js/styles/github.css';
+
+:root {
+  color-scheme: light;
+  font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  --font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Georgia', 'Songti SC', 'SimSun', serif;
+  --color-bg: #f5f1e8;
+  --color-surface: #fffdf8;
+  --color-surface-soft: #f0ece2;
+  --color-border: #e6e0d3;
+  --color-border-strong: #d6cfbe;
+  --color-text: #3d3a34;
+  --color-text-strong: #221f19;
+  --color-muted: #8a8375;
+  --color-muted-strong: #6b6457;
+  --color-primary: #d97757;
+  --color-primary-strong: #c05f3d;
+  --color-primary-soft: rgba(217, 119, 87, 0.12);
+  --color-accent: #b8572c;
+  --color-success: #5a8a6a;
+  --color-warning: #c08a3e;
+  --color-danger: #c0453a;
+  --color-admin-sidebar: #fffdf8;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.06);
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+}
+
+::selection {
+  background: rgba(217, 119, 87, 0.18);
+}
+
+/* 柔和卡片工具类：暖白面 + 细边 + 轻投影 */
+.glass {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 标题衬线体 */
+h1,
+h2,
+h3,
+.wb-title,
+.hero-title,
+.cp-title,
+.sl-title,
+.tc-title {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+
+/* 管理控制台：与工作台统一使用 Claude 暖色令牌，无需单独回退 */
+
+button,
+textarea,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button,
+input,
+textarea,
+select {
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+#app {
+  min-height: 100vh;
+  font-weight: normal;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(101, 116, 139, 0.24);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(101, 116, 139, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,30 @@
+package com.dochub.workbench.chatagent.rag.model;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.util.List;
+
+/**
+ * @program: 企业级别深度设计 AI Agent。添加 zhangjihe 微信
+ * @description: 问题改写结果
+ * @author: zhangjihe
+ **/
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class RagRewriteResult {
+
+    private String rewrittenQuestion;
+
+    private List<String> subQuestions;
+
+    private String rawModelOutput;
+
+    public RagRewriteResult(String rewrittenQuestion, List<String> subQuestions) {
+        this.rewrittenQuestion = rewrittenQuestion;
+        this.subQuestions = subQuestions;
+    }
+}

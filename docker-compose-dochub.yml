@@ -1,0 +1,107 @@
+# =============================================================
+# 文枢 DocHub 中间件一键启动（Docker Compose）
+# 说明：
+#   - MySQL 复用你已有的 mysql-one8（root/root，端口 3306），此处不含 MySQL
+#   - 账号/端口与 dochub-agent-business-dochub/src/main/resources/application.yaml 完全一致
+#   - 启动：docker compose -f docker-compose-dochub.yml up -d
+# =============================================================
+name: dochub-middleware
+
+services:
+  # MySQL：复用原有 mysql-one8 的数据卷，端口/账号不变（root/root），无感迁移
+  mysql:
+    container_name: dochub-mysql
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - dochub-mysql-data:/var/lib/mysql
+
+  # 向量数据库：Qdrant（命名卷存储，不挂本地文件夹）
+  qdrant:
+    container_name: dochub-qdrant
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - dochub-qdrant-data:/qdrant/storage
+
+  redis:
+    container_name: dochub-redis
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - dochub-redis-data:/data
+
+  kafka:
+    container_name: dochub-kafka
+    image: apache/kafka:3.7.0
+    environment:
+      KAFKA_NODE_ID: "0"
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@dochub-kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # 单节点 KRaft：内部 topic 副本因子必须为 1，否则 __consumer_offsets 建不出来
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+    ports:
+      - "9092:9092"
+
+  minio:
+    container_name: dochub-minio
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    command: minio server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - dochub-minio-data:/data
+
+  elasticsearch:
+    container_name: dochub-es
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      ELASTIC_PASSWORD: elastic
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - dochub-es-data:/usr/share/elasticsearch/data
+
+  neo4j:
+    container_name: dochub-neo4j
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/12345678
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - dochub-neo4j-data:/data
+
+volumes:
+  dochub-qdrant-data:
+  dochub-mysql-data:
+    external: true
+    name: d0cdb49ff57b1ec85447d5d2b4530eccba315881bd92449b0374783f9133714a
+  dochub-redis-data:
+  dochub-minio-data:
+  dochub-es-data:
+  dochub-neo4j-data:
