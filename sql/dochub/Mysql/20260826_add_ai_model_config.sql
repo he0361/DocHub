@@ -37,8 +37,6 @@ CREATE TABLE IF NOT EXISTS `dochub_ai_model_config_audit` (
     `operator` bigint DEFAULT NULL COMMENT '操作人',
     `error` text COMMENT '失败错误信息',
     `create_time` datetime DEFAULT NULL COMMENT '创建时间',
-    `edit_time` datetime DEFAULT NULL COMMENT '编辑时间',
-    `status` tinyint(1) DEFAULT '1' COMMENT '1:正常 0:删除',
     PRIMARY KEY (`id`),
     KEY `idx_model_config_audit_config` (`model_config_id`),
     KEY `idx_model_config_audit_type_version` (`model_type`, `config_version`),
