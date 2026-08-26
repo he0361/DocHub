@@ -465,6 +465,30 @@ export const adminUserApi = {
   }
 }
 
+/** 运行期对话模型配置（仅真正的管理员可用）。 */
+export const modelConfigApi = {
+  query() {
+    return requestApiEnvelope('/admin/model-config/query', {
+      method: 'POST',
+      body: {}
+    })
+  },
+
+  testChat(payload) {
+    return requestApiEnvelope('/admin/model-config/chat/test', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  saveChat(payload) {
+    return requestApiEnvelope('/admin/model-config/chat/save', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  }
+}
+
 export const manageApi = {
   uploadDocument({ file, documentName, operatorId, knowledgeScopeCode, knowledgeScopeName, businessCategory, documentTags }) {
     const formData = new FormData()

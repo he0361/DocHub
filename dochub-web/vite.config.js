@@ -7,6 +7,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [vue()],
+    test: {
+      environment: 'jsdom'
+    },
     build: {
       rollupOptions: {
         output: {
@@ -30,6 +33,10 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true
         },
         '/admin/user': {
+          target: proxyTarget,
+          changeOrigin: true
+        },
+        '/admin/model-config': {
           target: proxyTarget,
           changeOrigin: true
         },
