@@ -516,3 +516,50 @@ CREATE TABLE IF NOT EXISTS dochub_chat_stage_benchmark (
     PRIMARY KEY (id),
     UNIQUE KEY uk_stage_benchmark_code_mode (stage_code, execution_mode)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='阶段性能基准表';
+
+CREATE TABLE IF NOT EXISTS `dochub_ai_model_config` (
+    `id` bigint NOT NULL COMMENT '主键id',
+    `model_type` varchar(16) NOT NULL COMMENT '模型类型 CHAT/EMBEDDING',
+    `deployment_type` varchar(16) NOT NULL COMMENT '部署类型 REMOTE/LOCAL',
+    `compatibility_preset` varchar(64) NOT NULL COMMENT 'OpenAI 兼容性预设',
+    `base_url` varchar(1024) NOT NULL COMMENT '服务基础地址',
+    `request_path` varchar(512) DEFAULT NULL COMMENT '请求路径覆盖',
+    `model_name` varchar(255) NOT NULL COMMENT '模型名称',
+    `encrypted_api_key` text COMMENT 'AES-GCM 加密后的 API Key',
+    `temperature` decimal(4,3) DEFAULT NULL COMMENT '采样温度',
+    `max_tokens` int DEFAULT NULL COMMENT '最大生成 token 数',
+    `timeout_millis` int NOT NULL COMMENT '请求超时毫秒数',
+    `tool_calling_supported` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否支持工具调用',
+    `options_json` json DEFAULT NULL COMMENT '兼容提供方选项 JSON',
+    `config_version` bigint NOT NULL COMMENT '同类型单调递增配置版本',
+    `active` tinyint(1) NOT NULL DEFAULT '0' COMMENT '是否为当前激活版本',
+    `active_model_type` varchar(16) GENERATED ALWAYS AS (CASE WHEN `active` = 1 THEN `model_type` ELSE NULL END) STORED COMMENT '激活模型类型（用于单激活约束）',
+    `updated_by` bigint DEFAULT NULL COMMENT '最后更新操作人',
+    `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+    `edit_time` datetime DEFAULT NULL COMMENT '编辑时间',
+    `status` tinyint(1) DEFAULT '1' COMMENT '1:正常 0:删除',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_model_type_config_version` (`model_type`, `config_version`),
+    UNIQUE KEY `uk_active_model_type` (`active_model_type`),
+    KEY `idx_model_type_active` (`model_type`, `active`),
+    KEY `idx_model_config_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='运行时 AI 模型配置表';
+
+CREATE TABLE IF NOT EXISTS `dochub_ai_model_config_audit` (
+    `id` bigint NOT NULL COMMENT '主键id',
+    `model_config_id` bigint DEFAULT NULL COMMENT '关联模型配置id',
+    `model_type` varchar(16) DEFAULT NULL COMMENT '模型类型 CHAT/EMBEDDING',
+    `config_version` bigint DEFAULT NULL COMMENT '配置版本',
+    `action` varchar(32) NOT NULL COMMENT '操作类型 QUERY/TEST/SAVE/ACTIVATE',
+    `success` tinyint(1) NOT NULL COMMENT '操作是否成功',
+    `masked_endpoint` varchar(1024) DEFAULT NULL COMMENT '已脱敏服务端点',
+    `operator` bigint DEFAULT NULL COMMENT '操作人',
+    `error` text COMMENT '失败错误信息',
+    `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+    `edit_time` datetime DEFAULT NULL COMMENT '编辑时间',
+    `status` tinyint(1) DEFAULT '1' COMMENT '1:正常 0:删除',
+    PRIMARY KEY (`id`),
+    KEY `idx_model_config_audit_config` (`model_config_id`),
+    KEY `idx_model_config_audit_type_version` (`model_type`, `config_version`),
+    KEY `idx_model_config_audit_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='运行时 AI 模型配置审计表';
