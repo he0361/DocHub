@@ -15,6 +15,7 @@ import com.dochub.workbench.modelconfig.service.impl.ModelConfigServiceImpl;
 import com.dochub.workbench.modelconfig.support.ChatModelPolicyValidator;
 import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
 import com.dochub.workbench.modelconfig.support.SuperAdminGuard;
+import com.dochub.workbench.modelconfig.support.ModelConfigFailureAuditRecorder;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
 
@@ -46,7 +47,7 @@ class ModelConfigServiceImplTest {
             new ModelCredentialCipher(Base64.getEncoder().encodeToString(new byte[32])),
             new ChatModelPolicyValidator(), (model, toolCallingSupported) -> {
                 throw new IllegalStateException("unreachable provider");
-            }, superAdminGuard, mock(ModelConfigVersionPublisher.class));
+            }, superAdminGuard, mock(ModelConfigVersionPublisher.class), mock(ModelConfigFailureAuditRecorder.class));
 
         assertThatThrownBy(() -> service.saveChat("admin", dto()))
             .hasMessageContaining("连接测试失败");

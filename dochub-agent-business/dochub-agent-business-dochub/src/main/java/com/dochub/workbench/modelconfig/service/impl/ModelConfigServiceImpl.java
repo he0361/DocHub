@@ -20,6 +20,7 @@ import com.dochub.workbench.modelconfig.service.ModelConfigService;
 import com.dochub.workbench.modelconfig.support.ChatModelConnectionTester;
 import com.dochub.workbench.modelconfig.support.ChatModelPolicyValidator;
 import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
+import com.dochub.workbench.modelconfig.support.ModelConfigFailureAuditRecorder;
 import com.dochub.workbench.modelconfig.support.SuperAdminGuard;
 import com.dochub.workbench.modelconfig.vo.ModelConfigVo;
 import com.dochub.workbench.modelconfig.vo.ModelConnectionTestVo;
@@ -27,6 +28,8 @@ import org.javaup.exception.DochubFrameException;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.net.URI;
 import java.util.Date;
@@ -49,6 +52,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     private final ChatModelConnectionTester connectionTester;
     private final SuperAdminGuard superAdminGuard;
     private final ModelConfigVersionPublisher versionPublisher;
+    private final ModelConfigFailureAuditRecorder failureAuditRecorder;
 
     public ModelConfigServiceImpl(DochubAiModelConfigMapper configMapper,
                                   DochubAiModelConfigAuditMapper auditMapper,
@@ -59,7 +63,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
                                   ChatModelPolicyValidator policyValidator,
                                   ChatModelConnectionTester connectionTester,
                                   SuperAdminGuard superAdminGuard,
-                                  ModelConfigVersionPublisher versionPublisher) {
+                                  ModelConfigVersionPublisher versionPublisher,
+                                  ModelConfigFailureAuditRecorder failureAuditRecorder) {
         this.configMapper = configMapper;
         this.auditMapper = auditMapper;
         this.uidGenerator = uidGenerator;
@@ -70,6 +75,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         this.connectionTester = connectionTester;
         this.superAdminGuard = superAdminGuard;
         this.versionPublisher = versionPublisher;
+        this.failureAuditRecorder = failureAuditRecorder;
     }
 
     @Override
@@ -83,6 +89,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     @Override
     public ModelConnectionTestVo testChat(String username, ModelConfigTestDto dto) {
         AdminUserEntity operator = superAdminGuard.require(username);
+        requireCipher();
         Candidate candidate = candidate(dto, activeChat(), false);
         try {
             ChatModel model = factory.chatModel(candidate.spec());
@@ -91,7 +98,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
             return new ModelConnectionTestVo(true, "连接测试成功", policyValidator.rejectedReasoningPatterns());
         }
         catch (RuntimeException exception) {
-            audit(null, operator, "TEST", 0, "连接测试失败", candidate.baseUrl());
+            failureAuditRecorder.record(operator.getId(), maskEndpoint(candidate.baseUrl()), "连接测试失败");
             return new ModelConnectionTestVo(false, "连接测试失败", policyValidator.rejectedReasoningPatterns());
         }
     }
@@ -100,13 +107,14 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigVo saveChat(String username, ModelConfigSaveDto dto) {
         AdminUserEntity operator = superAdminGuard.require(username);
+        requireCipher();
         Candidate candidate = candidate(dto, activeChat(), dto != null && Boolean.TRUE.equals(dto.getClearApiKey()));
         ChatModel model = factory.chatModel(candidate.spec());
         try {
             connectionTester.test(model, candidate.toolCallingSupported());
         }
         catch (RuntimeException exception) {
-            audit(null, operator, "TEST", 0, "连接测试失败", candidate.baseUrl());
+            failureAuditRecorder.record(operator.getId(), maskEndpoint(candidate.baseUrl()), "连接测试失败");
             throw new DochubFrameException(400, "连接测试失败");
         }
 
@@ -136,15 +144,26 @@ public class ModelConfigServiceImpl implements ModelConfigService {
             .eq(DochubAiModelConfig::getActive, 1)
             .set(DochubAiModelConfig::getActive, 0));
         configMapper.insert(saved);
-        registry.activateChat(version, model, candidate.spec());
         audit(saved, operator, "ACTIVATE", 1, null);
-        try {
-            versionPublisher.publish(version);
-        }
-        catch (RuntimeException ignored) {
-            // The scheduled database version poll is the recovery path if Redis is temporarily unavailable.
-        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                registry.activateChat(version, model, candidate.spec());
+                try {
+                    versionPublisher.publish(version);
+                }
+                catch (RuntimeException ignored) {
+                    // The scheduled database version poll is the recovery path if Redis is temporarily unavailable.
+                }
+            }
+        });
         return toVo(saved);
+    }
+
+    private void requireCipher() {
+        if (!cipher.isAvailable()) {
+            throw new DochubFrameException(400, "模型配置加密密钥未配置");
+        }
     }
 
     private Candidate candidate(ModelConfigTestDto dto, DochubAiModelConfig current, boolean clearApiKey) {

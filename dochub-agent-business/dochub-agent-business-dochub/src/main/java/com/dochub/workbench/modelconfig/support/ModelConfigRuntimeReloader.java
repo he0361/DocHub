@@ -64,15 +64,12 @@ public class ModelConfigRuntimeReloader implements MessageListener {
 
     /** Public for deterministic scheduler and Redis listener tests. A failed reload deliberately retains the old snapshot. */
     public void reloadIfNewer() {
-        DochubAiModelConfig active = configMapper.selectOne(new LambdaQueryWrapper<DochubAiModelConfig>()
-            .eq(DochubAiModelConfig::getModelType, ModelType.CHAT.name())
-            .eq(DochubAiModelConfig::getActive, 1)
-            .eq(DochubAiModelConfig::getStatus, 1)
-            .last("LIMIT 1"));
-        if (active == null || active.getConfigVersion() == null || active.getConfigVersion() <= activeVersion()) {
-            return;
-        }
+        DochubAiModelConfig active = null;
         try {
+            active = configMapper.selectOne(new LambdaQueryWrapper<DochubAiModelConfig>()
+                .eq(DochubAiModelConfig::getModelType, ModelType.CHAT.name())
+                .eq(DochubAiModelConfig::getActive, 1).eq(DochubAiModelConfig::getStatus, 1).last("LIMIT 1"));
+            if (active == null || active.getConfigVersion() == null || active.getConfigVersion() <= activeVersion()) return;
             ModelRuntimeSpec spec = new ModelRuntimeSpec(ModelType.CHAT,
                 CompatibilityPreset.valueOf(active.getCompatibilityPreset()), active.getBaseUrl(),
                 blankToDefault(active.getRequestPath(), "/v1/chat/completions"), "/v1/embeddings",
@@ -80,10 +77,10 @@ public class ModelConfigRuntimeReloader implements MessageListener {
                 active.getMaxTokens(), active.getTimeoutMillis());
             ChatModel model = factory.chatModel(spec);
             registry.activateChat(active.getConfigVersion(), model, spec);
-            audit(active, 1, null);
+            auditSafely(active, 1, null);
         }
         catch (RuntimeException exception) {
-            audit(active, 0, "运行时配置加载失败");
+            if (active != null) auditSafely(active, 0, "运行时配置加载失败");
         }
     }
 
@@ -99,6 +96,10 @@ public class ModelConfigRuntimeReloader implements MessageListener {
     private void audit(DochubAiModelConfig config, int success, String error) {
         auditMapper.insert(new DochubAiModelConfigAudit(uidGenerator.getUid(), config.getId(), ModelType.CHAT.name(),
             config.getConfigVersion(), "RELOAD", success, maskedEndpoint(config.getBaseUrl()), null, error, new Date()));
+    }
+
+    private void auditSafely(DochubAiModelConfig config, int success, String error) {
+        try { audit(config, success, error); } catch (RuntimeException ignored) { }
     }
 
     private String maskedEndpoint(String baseUrl) {

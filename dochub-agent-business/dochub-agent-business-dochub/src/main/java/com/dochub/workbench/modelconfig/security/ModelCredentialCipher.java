@@ -21,6 +21,10 @@ public final class ModelCredentialCipher {
 
     private final SecretKey key;
     public ModelCredentialCipher(String base64Key) {
+        if (base64Key == null || base64Key.isBlank()) {
+            this.key = null;
+            return;
+        }
         byte[] decoded = Base64.getDecoder().decode(base64Key);
         if (decoded.length != KEY_BYTES) {
             throw new IllegalArgumentException("模型配置加密密钥必须为 32 字节");
@@ -29,6 +33,7 @@ public final class ModelCredentialCipher {
     }
 
     public String encrypt(String plaintext) {
+        requireKey();
         if (plaintext == null || plaintext.isBlank()) {
             return "";
         }
@@ -46,6 +51,7 @@ public final class ModelCredentialCipher {
     }
 
     public String decrypt(String value) {
+        requireKey();
         if (value == null || value.isBlank()) {
             return "";
         }
@@ -60,6 +66,16 @@ public final class ModelCredentialCipher {
             return new String(cipher.doFinal(Base64.getDecoder().decode(parts[2])), StandardCharsets.UTF_8);
         } catch (Exception exception) {
             throw new IllegalStateException("模型密钥解密失败", exception);
+        }
+    }
+
+    public boolean isAvailable() {
+        return key != null;
+    }
+
+    private void requireKey() {
+        if (key == null) {
+            throw new IllegalStateException("模型配置加密密钥未配置");
         }
     }
 }

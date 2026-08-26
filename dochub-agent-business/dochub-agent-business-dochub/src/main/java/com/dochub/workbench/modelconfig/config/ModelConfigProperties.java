@@ -14,4 +14,7 @@ public class ModelConfigProperties {
 
     /** Base64-encoded 32-byte AES key used to encrypt provider API keys. */
     private String encryptionKey;
+
+    /** Model-name fragments unsuitable for the low-latency chat slot. */
+    private java.util.List<String> reasoningOnlyPatterns = new java.util.ArrayList<>(java.util.List.of("qwq", "deepseek-r1", "thinking-only"));
 }

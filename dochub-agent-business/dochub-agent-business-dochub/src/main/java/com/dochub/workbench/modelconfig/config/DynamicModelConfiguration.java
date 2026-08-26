@@ -42,6 +42,11 @@ public class DynamicModelConfiguration {
     }
 
     @Bean
+    public com.dochub.workbench.modelconfig.support.ChatModelPolicyValidator chatModelPolicyValidator(ModelConfigProperties properties) {
+        return new com.dochub.workbench.modelconfig.support.ChatModelPolicyValidator(properties);
+    }
+
+    @Bean
     public RedisMessageListenerContainer modelConfigRedisListenerContainer(RedisConnectionFactory connectionFactory,
                                                                             ModelConfigRuntimeReloader reloader) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
