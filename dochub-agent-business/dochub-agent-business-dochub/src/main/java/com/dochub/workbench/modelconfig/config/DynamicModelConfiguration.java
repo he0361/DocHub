@@ -4,11 +4,18 @@ import com.dochub.workbench.modelconfig.runtime.DynamicChatModel;
 import com.dochub.workbench.modelconfig.runtime.DynamicEmbeddingModel;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import com.dochub.workbench.modelconfig.runtime.OpenAiCompatibleModelFactory;
+import com.dochub.workbench.modelconfig.security.ModelCredentialCipher;
+import com.dochub.workbench.modelconfig.support.ChatModelConnectionTester;
+import com.dochub.workbench.modelconfig.support.ModelConfigRuntimeReloader;
+import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.listener.ChannelTopic;
+import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 
 /** Registers the stable primary model delegates used by existing application consumers. */
 @Configuration
@@ -22,6 +29,25 @@ public class DynamicModelConfiguration {
     @Bean
     public OpenAiCompatibleModelFactory openAiCompatibleModelFactory() {
         return new OpenAiCompatibleModelFactory();
+    }
+
+    @Bean
+    public ModelCredentialCipher modelCredentialCipher(ModelConfigProperties properties) {
+        return new ModelCredentialCipher(properties.getEncryptionKey());
+    }
+
+    @Bean
+    public ChatModelConnectionTester chatModelConnectionTester() {
+        return ChatModelConnectionTester.defaultTester();
+    }
+
+    @Bean
+    public RedisMessageListenerContainer modelConfigRedisListenerContainer(RedisConnectionFactory connectionFactory,
+                                                                            ModelConfigRuntimeReloader reloader) {
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+        container.addMessageListener(reloader, new ChannelTopic(ModelConfigVersionPublisher.CHANNEL));
+        return container;
     }
 
     @Bean("dynamicChatModel")

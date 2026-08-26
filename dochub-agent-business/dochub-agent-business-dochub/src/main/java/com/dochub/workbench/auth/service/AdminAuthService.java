@@ -13,4 +13,7 @@ public interface AdminAuthService {
     AdminLoginVo login(AdminLoginRequest request);
 
     AdminProfileVo currentProfile(HttpServletRequest request);
+
+    /** Validates the current user's password without returning any credential material. */
+    boolean verifyCurrentPassword(String username, String password);
 }
