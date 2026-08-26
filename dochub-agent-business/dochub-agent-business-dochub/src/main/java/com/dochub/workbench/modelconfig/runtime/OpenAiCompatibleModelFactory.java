@@ -13,9 +13,22 @@ import org.springframework.ai.chat.model.ChatModel;
 
 import java.util.Map;
 import java.util.Objects;
+import java.time.Duration;
 
 /** Builds provider-neutral OpenAI-compatible models from a decrypted runtime spec. */
 public final class OpenAiCompatibleModelFactory {
+
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+
+    private final OpenAiHttpClientBuilderFactory httpClientBuilders;
+
+    public OpenAiCompatibleModelFactory() {
+        this(OpenAiHttpClientBuilderFactory.defaults());
+    }
+
+    OpenAiCompatibleModelFactory(OpenAiHttpClientBuilderFactory httpClientBuilders) {
+        this.httpClientBuilders = Objects.requireNonNull(httpClientBuilders, "httpClientBuilders must not be null");
+    }
 
     public ChatModel chatModel(ModelRuntimeSpec spec) {
         Objects.requireNonNull(spec, "spec must not be null");
@@ -51,11 +64,14 @@ public final class OpenAiCompatibleModelFactory {
     }
 
     private OpenAiApi openAiApi(ModelRuntimeSpec spec) {
+        Duration timeout = spec.timeoutMillis() == null ? DEFAULT_TIMEOUT : Duration.ofMillis(spec.timeoutMillis());
         return OpenAiApi.builder()
             .baseUrl(spec.baseUrl())
             .apiKey(spec.apiKey())
             .completionsPath(spec.completionsPath())
             .embeddingsPath(spec.embeddingsPath())
+            .restClientBuilder(httpClientBuilders.restClientBuilder(timeout))
+            .webClientBuilder(httpClientBuilders.webClientBuilder(timeout))
             .build();
     }
 }

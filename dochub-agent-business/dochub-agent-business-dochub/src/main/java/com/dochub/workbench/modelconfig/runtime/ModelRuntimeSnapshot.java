@@ -11,4 +11,9 @@ public record ModelRuntimeSnapshot<T>(long version, T model, ModelRuntimeSpec sp
         Objects.requireNonNull(model, "model must not be null");
         Objects.requireNonNull(spec, "spec must not be null");
     }
+
+    @Override
+    public String toString() {
+        return "ModelRuntimeSnapshot[version=" + version + ", model=<omitted>, spec=" + spec + ']';
+    }
 }

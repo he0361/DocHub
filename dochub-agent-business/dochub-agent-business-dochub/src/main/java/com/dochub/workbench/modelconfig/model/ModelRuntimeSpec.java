@@ -34,4 +34,12 @@ public record ModelRuntimeSpec(
         }
         return value;
     }
+
+    @Override
+    public String toString() {
+        return "ModelRuntimeSpec[modelType=" + modelType + ", compatibilityPreset=" + compatibilityPreset
+            + ", baseUrl=" + baseUrl + ", completionsPath=" + completionsPath + ", embeddingsPath="
+            + embeddingsPath + ", apiKey=<redacted>, modelName=" + modelName + ", temperature=" + temperature
+            + ", maxTokens=" + maxTokens + ", timeoutMillis=" + timeoutMillis + ']';
+    }
 }
