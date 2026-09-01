@@ -3,9 +3,9 @@ package com.dochub.workbench.chatagent.service;
 import cn.hutool.core.util.StrUtil;
 import com.baidu.fsg.uid.UidGenerator;
 import com.dochub.workbench.manage.support.QdrantVectorStore;
+import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
+import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -24,14 +24,14 @@ import java.util.Map;
 public class ConversationVectorMemoryService {
 
     private final QdrantVectorStore vectorStore;
-    private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
+    private final ModelRuntimeRegistry modelRuntimeRegistry;
     private final UidGenerator uidGenerator;
 
     public ConversationVectorMemoryService(QdrantVectorStore vectorStore,
-                                           ObjectProvider<EmbeddingModel> embeddingModelProvider,
+                                           ModelRuntimeRegistry modelRuntimeRegistry,
                                            UidGenerator uidGenerator) {
         this.vectorStore = vectorStore;
-        this.embeddingModelProvider = embeddingModelProvider;
+        this.modelRuntimeRegistry = modelRuntimeRegistry;
         this.uidGenerator = uidGenerator;
     }
 
@@ -43,11 +43,12 @@ public class ConversationVectorMemoryService {
             return;
         }
         try {
-            float[] embedding = embed(memoryText);
+            EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
+            float[] embedding = embed(runtime, memoryText);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("conversation_id", conversationId);
             payload.put("memory_text", memoryText);
-            vectorStore.upsert(vectorStore.memoryCollection(),
+            vectorStore.upsert(runtime.memoryCollection(),
                 List.of(new QdrantVectorStore.Point(uidGenerator.getUid(), embedding, payload)));
         }
         catch (Exception exception) {
@@ -63,11 +64,12 @@ public class ConversationVectorMemoryService {
             return List.of();
         }
         try {
-            float[] embedding = embed(query);
+            EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
+            float[] embedding = embed(runtime, query);
             Map<String, Object> filter = Map.of("must", List.of(Map.of(
                 "key", "conversation_id", "match", Map.of("value", conversationId))));
             List<QdrantVectorStore.SearchHit> hits =
-                vectorStore.search(vectorStore.memoryCollection(), embedding, Math.max(1, topK), filter);
+                vectorStore.search(runtime.memoryCollection(), embedding, Math.max(1, topK), filter);
             List<String> memories = new ArrayList<>();
             for (QdrantVectorStore.SearchHit hit : hits) {
                 Object text = hit.payload().get("memory_text");
@@ -83,12 +85,8 @@ public class ConversationVectorMemoryService {
         }
     }
 
-    private float[] embed(String text) {
-        EmbeddingModel model = embeddingModelProvider.getIfAvailable();
-        if (model == null) {
-            throw new IllegalStateException("当前无可用 EmbeddingModel，无法向量化记忆。");
-        }
-        List<float[]> embeddings = model.embed(List.of(StrUtil.blankToDefault(text, "")));
+    private float[] embed(EmbeddingRuntimeSnapshot runtime, String text) {
+        List<float[]> embeddings = runtime.model().embed(List.of(StrUtil.blankToDefault(text, "")));
         if (embeddings == null || embeddings.isEmpty() || embeddings.get(0) == null) {
             throw new IllegalStateException("记忆向量化为空。");
         }

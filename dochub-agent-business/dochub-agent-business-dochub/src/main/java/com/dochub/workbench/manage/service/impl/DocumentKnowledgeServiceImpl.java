@@ -17,10 +17,11 @@ import com.dochub.workbench.manage.service.DocumentKnowledgeService;
 import com.dochub.workbench.manage.service.keyword.DocumentKeywordSearchGateway;
 import com.dochub.workbench.manage.support.DocumentKnowledgeMetadataKeys;
 import com.dochub.workbench.manage.support.QdrantVectorStore;
+import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
+import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import org.javaup.enums.BusinessStatus;
 import org.javaup.enums.DocumentIndexStatusEnum;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
@@ -65,7 +66,7 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
     
     private final QdrantVectorStore qdrantVectorStore;
 
-    private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
+    private final ModelRuntimeRegistry modelRuntimeRegistry;
     
     private final ObjectProvider<DocumentKeywordSearchGateway> keywordSearchGatewayProvider;
     
@@ -103,9 +104,8 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
             return List.of();
         }
 
-        EmbeddingModel embeddingModel = requireEmbeddingModel();
-
-        float[] questionVector = embeddingModel.embed(request.getRetrievalQuery().trim());
+        EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
+        float[] questionVector = runtime.model().embed(request.getRetrievalQuery().trim());
         List<Long> documentIds = request.resolvedDocumentIds();
 
         Map<Long, KnowledgeDocumentDescriptor> descriptorMap = listDescriptorMap(documentIds);
@@ -117,7 +117,7 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
 
         Map<String, Object> filter = buildQdrantFilter(resolvedScope);
         List<QdrantVectorStore.SearchHit> hits = qdrantVectorStore.search(
-            qdrantVectorStore.documentCollection(),
+            runtime.documentCollection(),
             questionVector,
             resolveTopK(request.getTopK()),
             filter
@@ -242,11 +242,11 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
         if (terms.isEmpty()) {
             return List.of();
         }
-        EmbeddingModel embeddingModel = requireEmbeddingModel();
-        float[] queryVector = embeddingModel.embed(request.getRetrievalQuery().trim());
+        EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
+        float[] queryVector = runtime.model().embed(request.getRetrievalQuery().trim());
         Map<String, Object> filter = buildKeywordQdrantFilter(scope, terms);
         List<QdrantVectorStore.SearchHit> hits = qdrantVectorStore.search(
-            qdrantVectorStore.documentCollection(),
+            runtime.documentCollection(),
             queryVector,
             resolveTopK(request.getTopK()),
             filter
@@ -721,15 +721,6 @@ public class DocumentKnowledgeServiceImpl implements DocumentKnowledgeService {
     private int resolveTopK(int topK) {
 
         return topK <= 0 ? 10 : Math.min(topK, 50);
-    }
-
-    private EmbeddingModel requireEmbeddingModel() {
-        EmbeddingModel embeddingModel = embeddingModelProvider.getIfAvailable();
-        if (embeddingModel == null) {
-
-            throw new IllegalStateException("当前未找到可用的 EmbeddingModel，无法执行向量检索。");
-        }
-        return embeddingModel;
     }
 
     private int defaultInteger(Integer value) {

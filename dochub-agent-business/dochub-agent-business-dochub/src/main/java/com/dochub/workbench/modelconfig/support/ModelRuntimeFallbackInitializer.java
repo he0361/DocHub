@@ -8,6 +8,8 @@ import com.dochub.workbench.modelconfig.model.ModelRuntimeSpec;
 import com.dochub.workbench.modelconfig.model.ModelType;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import com.dochub.workbench.modelconfig.runtime.OpenAiCompatibleModelFactory;
+import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
+import com.dochub.workbench.manage.config.QdrantProperties;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,14 +21,15 @@ public class ModelRuntimeFallbackInitializer {
     private final DochubAiModelConfigMapper mapper;
     private final ModelRuntimeRegistry registry;
     private final OpenAiCompatibleModelFactory factory;
+    private final QdrantProperties qdrantProperties;
     @Value("${spring.ai.openai.base-url}") private String baseUrl;
     @Value("${spring.ai.openai.api-key}") private String apiKey;
     @Value("${spring.ai.openai.chat.options.model}") private String chatModel;
     @Value("${spring.ai.openai.embedding.options.model}") private String embeddingModel;
 
     public ModelRuntimeFallbackInitializer(DochubAiModelConfigMapper mapper, ModelRuntimeRegistry registry,
-                                           OpenAiCompatibleModelFactory factory) {
-        this.mapper = mapper; this.registry = registry; this.factory = factory;
+                                           OpenAiCompatibleModelFactory factory, QdrantProperties qdrantProperties) {
+        this.mapper = mapper; this.registry = registry; this.factory = factory; this.qdrantProperties = qdrantProperties;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -44,8 +47,16 @@ public class ModelRuntimeFallbackInitializer {
             if (type == ModelType.CHAT) {
                 try { registry.requireChat(); } catch (IllegalStateException ignored) { registry.activateChat(0, factory.chatModel(spec), spec); }
             } else {
-                try { registry.requireEmbedding(); } catch (IllegalStateException ignored) { registry.activateEmbedding(0, factory.embeddingModel(spec), spec); }
+                try { registry.requireEmbedding(); } catch (IllegalStateException ignored) {
+                    var model = factory.embeddingModel(spec);
+                    registry.activateEmbedding(new EmbeddingRuntimeSnapshot(0, model, spec,
+                        safeDimension(model), qdrantProperties.getDocumentCollection(), qdrantProperties.getMemoryCollection()));
+                }
             }
         } catch (RuntimeException ignored) { /* keep startup availability; an existing DB reload can still win */ }
+    }
+
+    private int safeDimension(org.springframework.ai.embedding.EmbeddingModel model) {
+        try { return Math.max(0, model.dimensions()); } catch (RuntimeException ignored) { return 0; }
     }
 }

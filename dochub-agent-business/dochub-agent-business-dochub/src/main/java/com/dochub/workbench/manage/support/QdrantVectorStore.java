@@ -56,10 +56,14 @@ public class QdrantVectorStore {
      * 文档向量集合专用初始化：建集合 + 给文本字段建全文索引（供关键字检索回退用）。
      */
     public void ensureDocumentCollection(int dimension) {
-        ensureCollection(documentCollection(), dimension);
-        createTextIndex(documentCollection(), "chunk_text");
-        createTextIndex(documentCollection(), "section_path");
-        createTextIndex(documentCollection(), "canonical_path");
+        ensureDocumentCollection(documentCollection(), dimension);
+    }
+
+    public void ensureDocumentCollection(String collection, int dimension) {
+        ensureCollection(collection, dimension);
+        createTextIndex(collection, "chunk_text");
+        createTextIndex(collection, "section_path");
+        createTextIndex(collection, "canonical_path");
     }
 
     private void createTextIndex(String collection, String field) {
