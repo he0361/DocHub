@@ -10,16 +10,24 @@ import com.dochub.workbench.modelconfig.support.ModelConfigRuntimeReloader;
 import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 
 /** Registers the stable primary model delegates used by existing application consumers. */
 @Configuration
 public class DynamicModelConfiguration {
+
+    @Bean
+    public ApplicationRunner modelConfigPropertyValidator(ModelConfigProperties properties, Environment environment) {
+        return arguments -> properties.validate(environment.acceptsProfiles(Profiles.of("prod", "production")));
+    }
 
     @Bean
     public ModelRuntimeRegistry modelRuntimeRegistry() {

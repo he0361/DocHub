@@ -17,4 +17,14 @@ public class ModelConfigProperties {
 
     /** Model-name fragments unsuitable for the low-latency chat slot. */
     private java.util.List<String> reasoningOnlyPatterns = new java.util.ArrayList<>(java.util.List.of("qwq", "deepseek-r1", "thinking-only"));
+
+    /**
+     * Rejects a production process that cannot encrypt database-backed model credentials.
+     * Development may start with YAML fallback only, before a runtime configuration is saved.
+     */
+    public void validate(boolean productionMode) {
+        if (productionMode && (encryptionKey == null || encryptionKey.isBlank())) {
+            throw new IllegalStateException("生产环境必须配置 DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY");
+        }
+    }
 }

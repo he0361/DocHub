@@ -46,9 +46,8 @@ spring:
       # 当前这里接的是阿里云百炼 DashScope 的兼容地址，
       # chat 和 embedding 都会通过这个基地址发请求。
       base-url: https://dashscope.aliyuncs.com/compatible-mode/
-      # OpenAI 兼容协议的访问密钥。
-      # 正式环境建议改成环境变量注入，不要把真实密钥直接写在配置文件里。
-      api-key: sk-7988183ca7cf4eea9f136dffd77e2df0
+      # 通过环境变量提供远程模型凭证；本地开发可以留空。
+      api-key: ${ALI_BAI_LIAN_API_KEY:}
       chat:
         options:
           # 对话模型名称。
@@ -60,9 +59,8 @@ spring:
       embedding:
         # embedding 单独指定 base-url，便于后续把对话模型和向量模型拆到不同网关时直接切换。
         base-url: https://dashscope.aliyuncs.com/compatible-mode/
-        # embedding 调用使用的密钥。
-        api-key: sk-7988183ca7cf4eea9f136dffd77e2df0
-#        api-key: ${ALI_BAI_LIAN_API_KEY:${RERANK_API_KEY}}
+        # embedding 可使用单独凭证，未提供时回退到聊天模型凭证。
+        api-key: ${ALI_BAI_LIAN_EMBEDDING_API_KEY:${ALI_BAI_LIAN_API_KEY:}}
         options:
           # 向量模型名称。
           # 当前文档切块向量化时，会直接使用这里配置的模型，不再额外在 manage 下重复维护一份。
@@ -161,9 +159,6 @@ app:
         temperature: 0.2
         # 改写阶段 topP，越低越不容易发散。
         top-p: 0.3
-        # 改写阶段是否开启 thinking。
-        # 这里会通过 OpenAI 兼容协议 extraBody 透传给下游模型。
-        thinking: false
       # 单轮最多拆分多少个子问题，避免一次提问被过度切碎。
       max-sub-questions: 4
       # 向量通道每个子问题默认召回数量。
@@ -244,9 +239,8 @@ app:
     # Tavily 搜索接口路径。
     # 默认使用官方的 /search 端点。
     search-path: /search
-    # Tavily 的 API Key。
-    # 推荐通过环境变量注入，避免把真实密钥写进配置文件。
-    api-key: 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
+    # Tavily 的 API Key 通过环境变量注入。
+    api-key: ${TAVILY_API_KEY:}
     # 搜索主题类型。
     # Tavily 当前只接受 general、news、finance 三个枚举值。
     # 一般场景优先用 general。

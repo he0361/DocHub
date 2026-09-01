@@ -242,7 +242,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
             config.getTemperature(), config.getMaxTokens(), config.getTimeoutMillis(),
             config.getToolCallingSupported() != null && config.getToolCallingSupported() == 1,
             config.getEncryptedApiKey() != null && !config.getEncryptedApiKey().isBlank(),
-            config.getActive() != null && config.getActive() == 1);
+            config.getActive() != null && config.getActive() == 1,
+            config.getUpdatedBy(), config.getEditTime());
     }
 
     private void audit(DochubAiModelConfig config, AdminUserEntity operator, String action, int success, String error) {

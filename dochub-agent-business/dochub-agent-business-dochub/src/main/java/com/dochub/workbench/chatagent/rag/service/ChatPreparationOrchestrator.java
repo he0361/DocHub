@@ -394,7 +394,6 @@ public class ChatPreparationOrchestrator {
         snapshot.put("rewriteOverrideEnabled", overrideEnabled);
         snapshot.put("rewriteTemperature", rewriteOptions == null ? null : rewriteOptions.getTemperature());
         snapshot.put("rewriteTopP", rewriteOptions == null ? null : rewriteOptions.getTopP());
-        snapshot.put("rewriteThinking", rewriteOptions == null ? null : rewriteOptions.getThinking());
         return snapshot;
     }
 

@@ -100,9 +100,28 @@ docker compose -f docker-compose-dochub.yml up -d
 
 ### 3. 配置模型服务
 
-编辑 `dochub-agent-business/dochub-agent-business-dochub/src/main/resources/application.yaml`，配置 OpenAI 兼容的模型地址与密钥。
+模型地址在 `dochub-agent-business/dochub-agent-business-dochub/src/main/resources/application.yaml` 中配置；密钥必须由部署环境提供。开发环境可不设置远程模型密钥，待管理员保存首个数据库运行时配置前会继续使用 YAML 地址作为回退。
 
-> ⚠️ 生产环境请通过环境变量注入密钥，**不要**将真实密钥提交到代码仓库。
+```powershell
+# 远程 DashScope/OpenAI-compatible chat model
+$env:ALI_BAI_LIAN_API_KEY = '<provider-issued-key>'
+# Optional: use a separate embedding credential; otherwise it falls back to the chat credential.
+$env:ALI_BAI_LIAN_EMBEDDING_API_KEY = '<provider-issued-embedding-key>'
+$env:TAVILY_API_KEY = '<provider-issued-key>'
+# Required when running with the prod or production Spring profile. Use an independently managed Base64 32-byte AES key.
+$env:DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY = '<base64-encoded-32-byte-key>'
+```
+
+> ⚠️ 历史提交中曾暴露的凭证必须立即在对应服务商处轮换；从仓库中删除明文并不能使旧凭证失效。不要将新凭证提交到代码仓库。
+
+本地模型的 Base URL 从后端进程（或后端容器）解析，而不是从浏览器解析。若后端运行在容器内，`http://127.0.0.1:11434/v1` 指向该容器本身；请改用宿主机网关或同一 Docker 网络中可达的服务地址。
+
+可在已启动后端、持有管理员 Bearer token 且已提供上述环境变量后，手动运行以下非持久化连接检查（脚本不会保存配置，也不会输出凭证）：
+
+```powershell
+$env:DOCHUB_ADMIN_BEARER_TOKEN = '<administrator-bearer-token>'
+powershell -ExecutionPolicy Bypass -File scripts/verify-model-runtime.ps1 -BaseUrl http://127.0.0.1:8090
+```
 
 ### 4. 启动后端
 
