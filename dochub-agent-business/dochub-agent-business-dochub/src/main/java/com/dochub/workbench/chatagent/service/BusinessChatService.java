@@ -402,6 +402,9 @@ public class BusinessChatService {
         if (!taskInfo.finalized().compareAndSet(false, true)) {
             return new ConversationStopVo(taskInfo.conversationId(), false, "会话已经结束");
         }
+        if (taskInfo.traceRecorder() != null) {
+            taskInfo.traceRecorder().cancelLatency();
+        }
 
         Optional<TaskInfo> currentTask = chatRuntimeRegistry.get(taskInfo.conversationId());
         if (currentTask.isPresent() && currentTask.get() != taskInfo) {
@@ -620,6 +623,7 @@ public class BusinessChatService {
                 taskInfo.question(),
                 answer,
                 historicalRecentExchanges(taskInfo),
+                taskInfo.executionPlan() == null ? null : taskInfo.executionPlan().getMode(),
                 taskInfo.traceRecorder()
             );
         }

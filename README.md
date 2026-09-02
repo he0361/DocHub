@@ -123,6 +123,20 @@ $env:DOCHUB_ADMIN_BEARER_TOKEN = '<administrator-bearer-token>'
 powershell -ExecutionPolicy Bypass -File scripts/verify-model-runtime.ps1 -BaseUrl http://127.0.0.1:8090
 ```
 
+### 开放问答响应模式与延迟检查
+
+开放式问答默认使用“快速回答”：规则路由后直接发起一次流式模型请求，不启动 ReAct、搜索工具或计划器。只有问题明确要求联网/搜索或涉及实时信息时才自动进入 ReAct；“计划执行”由用户显式选择。DashScope 请求固定关闭 `enable_thinking`，Ollama 请求固定关闭 `think`，通用 OpenAI 兼容服务不会收到平台私有字段。
+
+长会话只注入已有摘要和有限的最近问答；ReAct 与计划执行使用每一轮独立的 Graph 子线程，结束后清理检查点，避免历史消息和工具结果无限增长。
+
+后端和模型服务启动后，可用下列脚本连续采样普通开放问题。脚本会检查每个样本都是 `DIRECT_CHAT`、恰好一次模型调用、零工具调用，并以首个 `text` SSE 事件计算 TTFT；默认要求 p95 不超过 5 秒。实际结果仍受本地模型冷启动、网络和服务商排队影响，请连同运行环境记录结果，不要静默放宽阈值。
+
+```powershell
+$env:DOCHUB_CHAT_BEARER_TOKEN = '<user-or-admin-bearer-token>' # 若接口开启鉴权
+powershell -ExecutionPolicy Bypass -File scripts/verify-open-chat-latency.ps1 `
+  -BaseUrl http://127.0.0.1:9086 -Samples 20 -P95CeilingMs 5000
+```
+
 ### 4. 启动后端
 
 ```bash
