@@ -372,7 +372,7 @@ public class PersistentConversationMemoryService implements ConversationMemorySe
             newState.setLastSourceEditTime(lastSourceEditTime);
             newState.setStatus(BusinessStatus.YES.getCode());
             summaryMapper.insert(newState);
-            saveSummaryAsMemory(conversationId, summaryText);
+            saveSummaryAsMemory(newState.getId(), conversationId, summaryText);
             return newState;
         }
 
@@ -386,7 +386,7 @@ public class PersistentConversationMemoryService implements ConversationMemorySe
         updateState.setSummaryJson(summaryJson);
         updateState.setLastSourceEditTime(lastSourceEditTime);
         summaryMapper.updateById(updateState);
-        saveSummaryAsMemory(conversationId, summaryText);
+        saveSummaryAsMemory(updateState.getId(), conversationId, summaryText);
 
         latestState.setCoveredExchangeId(updateState.getCoveredExchangeId());
         latestState.setCoveredExchangeCount(updateState.getCoveredExchangeCount());
@@ -398,9 +398,9 @@ public class PersistentConversationMemoryService implements ConversationMemorySe
         return latestState;
     }
 
-    private void saveSummaryAsMemory(String conversationId, String summaryText) {
+    private void saveSummaryAsMemory(Long summaryId, String conversationId, String summaryText) {
         if (StrUtil.isNotBlank(conversationId) && StrUtil.isNotBlank(summaryText)) {
-            conversationVectorMemoryService.saveMemory(conversationId, summaryText);
+            conversationVectorMemoryService.saveMemory(summaryId, conversationId, summaryText);
         }
     }
 

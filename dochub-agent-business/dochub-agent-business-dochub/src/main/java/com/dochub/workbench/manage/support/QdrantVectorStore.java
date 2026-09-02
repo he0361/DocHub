@@ -177,6 +177,54 @@ public class QdrantVectorStore {
         }
     }
 
+    /** Delete deterministic point identifiers and wait until Qdrant acknowledges the mutation. */
+    public void deletePoints(String collection, List<Long> pointIds) {
+        if (pointIds == null || pointIds.isEmpty()) {
+            return;
+        }
+        restClient.post()
+            .uri("/collections/{name}/points/delete?wait=true", collection)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("points", pointIds))
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    /** Exact point count used by the pre-switch reconciliation. */
+    @SuppressWarnings("unchecked")
+    public long count(String collection) {
+        Map<String, Object> response = restClient.post()
+            .uri("/collections/{name}/points/count?exact=true", collection)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("exact", true))
+            .retrieve()
+            .body(Map.class);
+        Object result = response == null ? null : response.get("result");
+        Object value = result instanceof Map<?, ?> map ? map.get("count") : null;
+        if (!(value instanceof Number number)) {
+            throw new IllegalStateException("Qdrant 未返回集合点数量: " + collection);
+        }
+        return number.longValue();
+    }
+
+    /** Configured vector dimension used to reject a partial or incompatible target collection. */
+    @SuppressWarnings("unchecked")
+    public int collectionDimension(String collection) {
+        Map<String, Object> response = restClient.get()
+            .uri("/collections/{name}", collection)
+            .retrieve()
+            .body(Map.class);
+        Object result = response == null ? null : response.get("result");
+        Object config = result instanceof Map<?, ?> map ? map.get("config") : null;
+        Object params = config instanceof Map<?, ?> map ? map.get("params") : null;
+        Object vectors = params instanceof Map<?, ?> map ? map.get("vectors") : null;
+        Object size = vectors instanceof Map<?, ?> map ? map.get("size") : null;
+        if (!(size instanceof Number number) || number.intValue() <= 0) {
+            throw new IllegalStateException("Qdrant 未返回集合向量维度: " + collection);
+        }
+        return number.intValue();
+    }
+
     public String documentCollection() {
         return properties.getDocumentCollection();
     }

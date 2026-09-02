@@ -561,3 +561,32 @@ CREATE TABLE IF NOT EXISTS `dochub_ai_model_config_audit` (
     KEY `idx_model_config_audit_type_version` (`model_type`, `config_version`),
     KEY `idx_model_config_audit_create_time` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='运行时 AI 模型配置审计表';
+
+CREATE TABLE IF NOT EXISTS `dochub_embedding_model_migration` (
+    `id` bigint NOT NULL, `source_config_version` bigint NOT NULL, `target_config_version` bigint NOT NULL,
+    `source_model_name` varchar(255) NOT NULL, `target_model_name` varchar(255) NOT NULL,
+    `source_dimension` int NOT NULL, `target_dimension` int NOT NULL,
+    `source_document_collection` varchar(255) NOT NULL, `target_document_collection` varchar(255) NOT NULL,
+    `source_memory_collection` varchar(255) NOT NULL, `target_memory_collection` varchar(255) NOT NULL,
+    `migration_status` varchar(32) NOT NULL, `document_total` bigint DEFAULT 0, `document_processed` bigint DEFAULT 0,
+    `document_failed` bigint DEFAULT 0, `memory_total` bigint DEFAULT 0, `memory_processed` bigint DEFAULT 0,
+    `memory_failed` bigint DEFAULT 0, `last_document_chunk_id` bigint DEFAULT 0, `last_memory_summary_id` bigint DEFAULT 0,
+    `last_delta_sequence` bigint DEFAULT 0, `lease_owner` varchar(128), `lease_expire_time` datetime,
+    `error_summary` varchar(1024), `start_time` datetime, `switch_time` datetime, `finish_time` datetime,
+    `operator` bigint, `lock_version` int DEFAULT 0, `create_time` datetime, `edit_time` datetime, `status` tinyint DEFAULT 1,
+    PRIMARY KEY (`id`), KEY `idx_embedding_migration_status` (`migration_status`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='向量模型蓝绿迁移任务';
+
+CREATE TABLE IF NOT EXISTS `dochub_embedding_migration_delta` (
+    `id` bigint NOT NULL, `migration_id` bigint NOT NULL, `resource_type` varchar(16) NOT NULL,
+    `resource_id` bigint NOT NULL, `operation` varchar(16) NOT NULL, `sequence_no` bigint NOT NULL,
+    `delta_status` varchar(16) NOT NULL DEFAULT 'PENDING', `attempts` int DEFAULT 0, `error_summary` varchar(1024),
+    `create_time` datetime, `edit_time` datetime, `status` tinyint DEFAULT 1,
+    PRIMARY KEY (`id`), UNIQUE KEY `uk_embedding_delta_sequence` (`migration_id`, `sequence_no`),
+    KEY `idx_embedding_delta_pending` (`migration_id`, `delta_status`, `sequence_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='向量迁移增量日志';
+
+CREATE TABLE IF NOT EXISTS `dochub_embedding_migration_lock` (
+    `lock_name` varchar(64) NOT NULL, `holder_migration_id` bigint, `edit_time` datetime, PRIMARY KEY (`lock_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='向量迁移单任务锁';
+INSERT IGNORE INTO `dochub_embedding_migration_lock` (`lock_name`, `edit_time`) VALUES ('embedding-model', NOW());

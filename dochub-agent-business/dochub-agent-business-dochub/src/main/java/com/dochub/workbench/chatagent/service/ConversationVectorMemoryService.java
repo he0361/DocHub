@@ -5,8 +5,10 @@ import com.baidu.fsg.uid.UidGenerator;
 import com.dochub.workbench.manage.support.QdrantVectorStore;
 import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
+import com.dochub.workbench.modelconfig.support.VectorMutationCoordinator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -26,30 +28,39 @@ public class ConversationVectorMemoryService {
     private final QdrantVectorStore vectorStore;
     private final ModelRuntimeRegistry modelRuntimeRegistry;
     private final UidGenerator uidGenerator;
+    private final ObjectProvider<VectorMutationCoordinator> mutationCoordinatorProvider;
 
     public ConversationVectorMemoryService(QdrantVectorStore vectorStore,
                                            ModelRuntimeRegistry modelRuntimeRegistry,
-                                           UidGenerator uidGenerator) {
+                                           UidGenerator uidGenerator,
+                                           ObjectProvider<VectorMutationCoordinator> mutationCoordinatorProvider) {
         this.vectorStore = vectorStore;
         this.modelRuntimeRegistry = modelRuntimeRegistry;
         this.uidGenerator = uidGenerator;
+        this.mutationCoordinatorProvider = mutationCoordinatorProvider;
     }
 
     /**
      * 把一段记忆文本向量化并存入长期记忆。
      */
     public void saveMemory(String conversationId, String memoryText) {
+        saveMemory(uidGenerator.getUid(), conversationId, memoryText);
+    }
+
+    public void saveMemory(Long summaryId, String conversationId, String memoryText) {
         if (StrUtil.isBlank(conversationId) || StrUtil.isBlank(memoryText)) {
             return;
         }
         try {
+            coordinator().ifPresent(VectorMutationCoordinator::assertMutationAllowed);
             EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
             float[] embedding = embed(runtime, memoryText);
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("conversation_id", conversationId);
             payload.put("memory_text", memoryText);
             vectorStore.upsert(runtime.memoryCollection(),
-                List.of(new QdrantVectorStore.Point(uidGenerator.getUid(), embedding, payload)));
+                List.of(new QdrantVectorStore.Point(summaryId, embedding, payload)));
+            coordinator().ifPresent(value -> value.memoryUpsert(summaryId));
         }
         catch (Exception exception) {
             log.warn("保存会话长期记忆失败: {}", exception.getMessage());
@@ -91,5 +102,10 @@ public class ConversationVectorMemoryService {
             throw new IllegalStateException("记忆向量化为空。");
         }
         return embeddings.get(0);
+    }
+
+    private java.util.Optional<VectorMutationCoordinator> coordinator() {
+        return mutationCoordinatorProvider == null ? java.util.Optional.empty()
+            : java.util.Optional.ofNullable(mutationCoordinatorProvider.getIfAvailable());
     }
 }
