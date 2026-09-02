@@ -19,6 +19,10 @@ public class ChatAgentProperties {
     private long recommendationTimeoutMs = 3000L;
     private String systemPrompt = "";
     private String recommendationPrompt = "";
+    private int directChatRecentTurns = 6;
+    private int directChatMaxCharacters = 12000;
+    private int agentRecentTurns = 4;
+    private int agentSeedMaxCharacters = 8000;
 
     /** 计划-执行（Plan-and-Execute）能力开关 */
     private boolean planExecuteEnabled = true;
@@ -111,5 +115,37 @@ public class ChatAgentProperties {
 
     public void setPlanMaxSteps(int planMaxSteps) {
         this.planMaxSteps = planMaxSteps;
+    }
+
+    public int getDirectChatRecentTurns() {
+        return directChatRecentTurns;
+    }
+
+    public void setDirectChatRecentTurns(int directChatRecentTurns) {
+        this.directChatRecentTurns = directChatRecentTurns;
+    }
+
+    public int getDirectChatMaxCharacters() {
+        return directChatMaxCharacters;
+    }
+
+    public void setDirectChatMaxCharacters(int directChatMaxCharacters) {
+        this.directChatMaxCharacters = directChatMaxCharacters;
+    }
+
+    public int getAgentRecentTurns() {
+        return agentRecentTurns;
+    }
+
+    public void setAgentRecentTurns(int agentRecentTurns) {
+        this.agentRecentTurns = agentRecentTurns;
+    }
+
+    public int getAgentSeedMaxCharacters() {
+        return agentSeedMaxCharacters;
+    }
+
+    public void setAgentSeedMaxCharacters(int agentSeedMaxCharacters) {
+        this.agentSeedMaxCharacters = agentSeedMaxCharacters;
     }
 }

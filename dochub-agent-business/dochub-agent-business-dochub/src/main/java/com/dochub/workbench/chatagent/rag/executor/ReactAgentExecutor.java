@@ -7,13 +7,17 @@ import com.alibaba.cloud.ai.graph.exception.GraphRunnerException;
 import com.alibaba.cloud.ai.graph.streaming.OutputType;
 import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.dochub.workbench.chatagent.model.trace.ConversationTraceStageCode;
+import com.dochub.workbench.chatagent.rag.model.AgentTurnContext;
 import com.dochub.workbench.chatagent.rag.model.ExecutionMode;
+import com.dochub.workbench.chatagent.rag.service.AgentTurnContextFactory;
 import com.dochub.workbench.chatagent.rag.support.ExecutorEventSupport;
+import com.dochub.workbench.chatagent.service.ChatCheckpointManager;
 import com.dochub.workbench.chatagent.service.ConversationTraceRecorder;
 import com.dochub.workbench.chatagent.service.TaskInfo;
 import com.dochub.workbench.chatagent.support.StreamEventWriter;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -29,15 +33,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
  **/
 
 @Component
+@Slf4j
 public class ReactAgentExecutor implements ConversationExecutor {
 
     private final ReactAgent reactAgent;
     private final StreamEventWriter streamEventWriter;
+    private final AgentTurnContextFactory turnContextFactory;
+    private final ChatCheckpointManager checkpointManager;
 
     public ReactAgentExecutor(ReactAgent businessChatReactAgent,
-                              StreamEventWriter streamEventWriter) {
+                              StreamEventWriter streamEventWriter,
+                              AgentTurnContextFactory turnContextFactory,
+                              ChatCheckpointManager checkpointManager) {
         this.reactAgent = businessChatReactAgent;
         this.streamEventWriter = streamEventWriter;
+        this.turnContextFactory = turnContextFactory;
+        this.checkpointManager = checkpointManager;
     }
 
     @Override
@@ -48,6 +59,9 @@ public class ReactAgentExecutor implements ConversationExecutor {
     @Override
     public Flux<String> execute(TaskInfo taskInfo) {
         AtomicBoolean streamedText = new AtomicBoolean(false);
+        AgentTurnContext turnContext = turnContextFactory.create(
+            taskInfo.conversationId(), taskInfo.exchangeId(), taskInfo.runnableConfig());
+        taskInfo.setActiveAgentConfig(turnContext.runnableConfig());
         ExecutorEventSupport.publishThinking(taskInfo, streamEventWriter, "当前问题进入开放式 Agent 自主执行阶段。");
 
         taskInfo.debugTrace().getRetrievalNotes().add("当前问题走 ReactAgent 执行路径，由 Agent 自主决定是否调用联网搜索或其他工具。");
@@ -60,7 +74,9 @@ public class ReactAgentExecutor implements ConversationExecutor {
                 null
             );
         try {
-            return reactAgent.stream(taskInfo.executionPlan().getAgentQuestion(), taskInfo.runnableConfig())
+            return reactAgent.stream(
+                    turnContext.prependTo(taskInfo.executionPlan().getAgentQuestion()),
+                    turnContext.runnableConfig())
                 .publishOn(Schedulers.boundedElastic())
                 .concatMap(output -> extractTextChunk(output, streamedText))
                 .doOnComplete(() -> {
@@ -75,14 +91,27 @@ public class ReactAgentExecutor implements ConversationExecutor {
                     if (taskInfo.traceRecorder() != null) {
                         taskInfo.traceRecorder().failStage(agentStage, "ReAct Agent 执行失败。", error.getMessage(), null);
                     }
-                });
+                })
+                .doFinally(signal -> cleanupTurn(taskInfo, turnContext));
         }
         catch (GraphRunnerException exception) {
 
             if (taskInfo.traceRecorder() != null) {
                 taskInfo.traceRecorder().failStage(agentStage, "ReAct Agent 执行失败。", exception.getMessage(), null);
             }
+            cleanupTurn(taskInfo, turnContext);
             return Flux.error(exception);
+        }
+    }
+
+    private void cleanupTurn(TaskInfo taskInfo, AgentTurnContext turnContext) {
+        taskInfo.setActiveAgentConfig(null);
+        try {
+            checkpointManager.clearThread(turnContext.threadId());
+        }
+        catch (RuntimeException exception) {
+            log.warn("清理 ReAct 子线程检查点失败。threadId={}, error={}",
+                turnContext.threadId(), exception.getMessage());
         }
     }
 

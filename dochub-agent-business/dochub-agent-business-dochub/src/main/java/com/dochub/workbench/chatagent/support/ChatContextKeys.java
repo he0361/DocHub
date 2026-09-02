@@ -16,7 +16,7 @@ public final class ChatContextKeys {
     public static final String THINKING_STEPS = "chat.thinking.steps";
     public static final String QUESTION = "chat.question";
     public static final String CHAT_MODE = "chat.mode";
-    /** 开放式提问的回答方式：REACT_AGENT / PLAN_AND_EXECUTE（用户可选） */
+    /** 开放式提问的回答方式：DIRECT_CHAT / REACT_AGENT / PLAN_AND_EXECUTE（用户可选） */
     public static final String OPEN_CHAT_MODE = "chat.open.chat.mode";
     /** 用户通过 /skills 命令强制指定的技能名（为空则走自动匹配） */
     public static final String FORCED_SKILL_NAME = "chat.forced.skill.name";

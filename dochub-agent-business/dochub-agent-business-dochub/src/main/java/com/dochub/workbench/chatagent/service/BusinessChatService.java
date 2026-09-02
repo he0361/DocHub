@@ -337,14 +337,16 @@ public class BusinessChatService {
         );
     }
 
-    /**
-     * 归一化开放式提问的回答方式，非法/为空时默认 ReAct。
-     */
+    /** 归一化显式选择；空值交给确定性规则路由。 */
     private String normalizeOpenChatMode(String value) {
-        if (StrUtil.isNotBlank(value) && ExecutionMode.PLAN_AND_EXECUTE.name().equalsIgnoreCase(value.trim())) {
-            return ExecutionMode.PLAN_AND_EXECUTE.name();
+        if (StrUtil.isBlank(value)) {
+            return null;
         }
-        return ExecutionMode.REACT_AGENT.name();
+        String normalized = value.trim().toUpperCase(java.util.Locale.ROOT);
+        return switch (normalized) {
+            case "DIRECT_CHAT", "REACT_AGENT", "PLAN_AND_EXECUTE" -> normalized;
+            default -> null;
+        };
     }
 
     private boolean claimConversationLease(StreamLaunchPlan launchPlan) {
@@ -409,7 +411,8 @@ public class BusinessChatService {
 
         try {
 
-            businessChatReactAgent.interrupt(taskInfo.runnableConfig());
+            RunnableConfig activeAgentConfig = taskInfo.getActiveAgentConfig();
+            businessChatReactAgent.interrupt(activeAgentConfig == null ? taskInfo.runnableConfig() : activeAgentConfig);
         }
         catch (RuntimeException exception) {
             log.debug("中断 ReactAgent 时出现异常，继续释放资源", exception);
@@ -553,7 +556,7 @@ public class BusinessChatService {
         conversationMemoryService.deleteConversationSummary(conversationId);
         conversationTraceStageStore.deleteStages(conversationId);
         retrievalObserveStore.deleteByConversation(conversationId);
-        int removedCheckpointCount = checkpointManager.clearThread(conversationId);
+        int removedCheckpointCount = checkpointManager.clearConversation(conversationId);
         return new ConversationResetVo(
             conversationId,
             stopResult.isStopped(),
@@ -567,6 +570,9 @@ public class BusinessChatService {
     private void emitModelChunk(TaskInfo taskInfo, String chunk) {
 
         taskInfo.answerBuffer().append(chunk);
+        if (taskInfo.traceRecorder() != null) {
+            taskInfo.traceRecorder().onTextChunk(chunk);
+        }
 
         if (taskInfo.firstResponseTimeMs().get() == 0L) {
 
@@ -579,6 +585,9 @@ public class BusinessChatService {
     private void finishSuccessfully(TaskInfo taskInfo) {
         if (!taskInfo.finalized().compareAndSet(false, true)) {
             return;
+        }
+        if (taskInfo.traceRecorder() != null) {
+            taskInfo.traceRecorder().completeLatency();
         }
 
         String answer = taskInfo.answerBuffer().toString();
@@ -681,6 +690,9 @@ public class BusinessChatService {
         if (!taskInfo.finalized().compareAndSet(false, true)) {
             return;
         }
+        if (taskInfo.traceRecorder() != null) {
+            taskInfo.traceRecorder().failLatency();
+        }
 
         String errorMessage = buildErrorMessage(error);
         ConversationTraceRecorder.StageHandle finalizeStage = taskInfo.traceRecorder() == null
@@ -778,6 +790,7 @@ public class BusinessChatService {
             return;
         }
         taskInfo.debugTrace().setModelUsageTraces(taskInfo.traceRecorder().snapshotModelUsageTraces());
+        taskInfo.debugTrace().setLatencyTrace(taskInfo.traceRecorder().snapshotLatencyTrace());
         com.dochub.workbench.chatagent.model.debug.ChatLimitStats limitStats = taskInfo.traceRecorder().limitStats();
         limitStats.setModelCallsUsed(taskInfo.traceRecorder().snapshotModelUsageTraces().size());
         limitStats.setModelCallsRunLimit(chatAgentProperties.getMaxModelCallsPerRun());
@@ -876,8 +889,14 @@ public class BusinessChatService {
             : (String) taskInfo.runnableConfig().context().get(ChatContextKeys.FORCED_SKILL_NAME);
         SkillMatchResult skillMatch = StrUtil.isNotBlank(forcedSkillName)
             ? skillSceneRouter.routeByName(forcedSkillName)
-            : skillSceneRouter.route(executionPlan.getOriginalQuestion());
+            : executionPlan.getMode() == ExecutionMode.DIRECT_CHAT
+                ? null
+                : skillSceneRouter.route(executionPlan.getOriginalQuestion());
         if (skillMatch != null) {
+            if (StrUtil.isNotBlank(forcedSkillName) && executionPlan.getMode() == ExecutionMode.DIRECT_CHAT) {
+                executionPlan.setMode(ExecutionMode.REACT_AGENT);
+                executionPlan.setRouteReason("EXPLICIT_SKILL_COMMAND");
+            }
             executionPlan.setSkillMatch(skillMatch);
             skillSceneRouter.recordUsage(skillMatch, taskInfo.conversationId(), taskInfo.exchangeId(),
                 executionPlan.getMode() == null ? "CHAT" : executionPlan.getMode().name());
@@ -888,7 +907,9 @@ public class BusinessChatService {
                 taskInfo.eventMetadata()));
         }
 
-        executionPlan.setAgentQuestion(buildAgentQuestion(executionPlan));
+        executionPlan.setAgentQuestion(executionPlan.getMode() == ExecutionMode.DIRECT_CHAT
+            ? executionPlan.getOriginalQuestion()
+            : buildAgentQuestion(executionPlan));
         if (executionPlan.getSelectedDocumentId() != null
             && !Objects.equals(executionPlan.getSelectedDocumentId(), taskInfo.selectedDocumentId())) {
             conversationArchiveStore.refreshSessionScope(

@@ -5,6 +5,8 @@ import com.dochub.workbench.chatagent.model.ChannelExecutionView;
 import com.dochub.workbench.chatagent.model.RetrievalResultView;
 import com.dochub.workbench.chatagent.model.debug.ChatLimitStats;
 import com.dochub.workbench.chatagent.model.debug.ChatModelUsageTrace;
+import com.dochub.workbench.chatagent.model.debug.ChatLatencyTrace;
+import com.dochub.workbench.chatagent.support.ChatLatencyTracker;
 import com.dochub.workbench.chatagent.model.trace.ConversationTraceStageCode;
 import com.dochub.workbench.chatagent.model.trace.ConversationTraceStageState;
 
@@ -32,6 +34,7 @@ public class ConversationTraceRecorder {
     private final String traceId;
     private final List<ChatModelUsageTrace> modelUsageTraces = Collections.synchronizedList(new ArrayList<>());
     private final ChatLimitStats limitStats = new ChatLimitStats();
+    private final ChatLatencyTracker latencyTracker = new ChatLatencyTracker();
 
     public ConversationTraceRecorder(ConversationTraceStageStore traceStageStore,
                                      RetrievalObserveStore retrievalObserveStore,
@@ -43,6 +46,7 @@ public class ConversationTraceRecorder {
         this.conversationId = conversationId;
         this.exchangeId = exchangeId;
         this.traceId = traceId;
+        this.latencyTracker.accepted();
     }
 
     public String conversationId() {
@@ -161,6 +165,34 @@ public class ConversationTraceRecorder {
 
     public List<ChatModelUsageTrace> snapshotModelUsageTraces() {
         return new ArrayList<>(modelUsageTraces);
+    }
+
+    public void recordModelRequest(int promptCharacters, long modelConfigVersion) {
+        latencyTracker.onModelRequest(promptCharacters, modelConfigVersion);
+    }
+
+    public void recordToolCall() {
+        latencyTracker.onToolCall();
+    }
+
+    public void onTextChunk(String chunk) {
+        latencyTracker.onTextChunk(chunk);
+    }
+
+    public void completeLatency() {
+        latencyTracker.complete();
+    }
+
+    public void failLatency() {
+        latencyTracker.fail();
+    }
+
+    public void cancelLatency() {
+        latencyTracker.cancel();
+    }
+
+    public ChatLatencyTrace snapshotLatencyTrace() {
+        return latencyTracker.snapshot();
     }
 
     public ChatLimitStats limitStats() {

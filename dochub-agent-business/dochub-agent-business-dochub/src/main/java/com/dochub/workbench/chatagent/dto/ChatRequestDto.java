@@ -26,8 +26,8 @@ public class ChatRequestDto {
     private String selectedDocumentId;
 
     /**
-     * 开放式提问的回答方式：REACT_AGENT（ReAct 自主执行）或 PLAN_AND_EXECUTE（计划-执行）。
-     * 仅 chatMode=OPEN_CHAT 时生效；为空时默认 REACT_AGENT。
+     * 开放式回答方式：DIRECT_CHAT / REACT_AGENT / PLAN_AND_EXECUTE。
+     * 仅 chatMode=OPEN_CHAT 时生效；为空时由确定性规则路由，普通问题默认 DIRECT_CHAT。
      */
     private String openChatMode;
 
