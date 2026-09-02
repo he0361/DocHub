@@ -128,6 +128,8 @@ CREATE TABLE IF NOT EXISTS `dochub_document` (
     `knowledge_scope_name` varchar(128) DEFAULT NULL COMMENT '业务知识域名称，例如 OA系统 / CRM系统',
     `business_category` varchar(128) DEFAULT NULL COMMENT '业务分类，例如 流程 / 规则 / 操作手册',
     `document_tags` varchar(512) DEFAULT NULL COMMENT '逗号分隔标签快照',
+    `classification_status` varchar(32) NOT NULL DEFAULT 'UNCLASSIFIED' COMMENT '知识分类状态 UNCLASSIFIED/CONFIRMED/PENDING_REVIEW/FAILED',
+    `classification_review_id` bigint DEFAULT NULL COMMENT '当前知识分类审核id',
     `current_plan_id` bigint DEFAULT NULL COMMENT '当前策略方案id',
     `last_parse_task_id` bigint DEFAULT NULL COMMENT '最近一次成功解析任务id',
     `structure_node_count` int DEFAULT '0' COMMENT '最近一次结构化解析生成的节点数',
@@ -141,6 +143,7 @@ CREATE TABLE IF NOT EXISTS `dochub_document` (
     KEY `idx_strategy_status` (`strategy_status`),
     KEY `idx_index_status` (`index_status`),
     KEY `idx_knowledge_scope_code` (`knowledge_scope_code`),
+    KEY `idx_classification_status` (`classification_status`),
     KEY `idx_current_plan_id` (`current_plan_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文档表';
 
@@ -324,6 +327,7 @@ CREATE TABLE IF NOT EXISTS `dochub_knowledge_scope_node` (
     `id` bigint NOT NULL COMMENT '主键id',
     `scope_code` varchar(64) NOT NULL COMMENT '知识范围编码',
     `scope_name` varchar(128) NOT NULL COMMENT '知识范围名称',
+    `canonical_key` varchar(191) NOT NULL COMMENT 'NFKC 规范化唯一键',
     `parent_scope_code` varchar(64) DEFAULT NULL COMMENT '父级知识范围编码',
     `description` varchar(1024) DEFAULT NULL COMMENT '范围描述',
     `aliases` varchar(512) DEFAULT NULL COMMENT '别名，英文逗号分隔',
@@ -334,6 +338,7 @@ CREATE TABLE IF NOT EXISTS `dochub_knowledge_scope_node` (
     `status` tinyint(1) DEFAULT '1' COMMENT '1:正常 0:删除',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_scope_code` (`scope_code`),
+    UNIQUE KEY `uk_scope_canonical_key` (`canonical_key`),
     KEY `idx_parent_scope_code` (`parent_scope_code`),
     KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识范围节点表';
@@ -343,6 +348,7 @@ CREATE TABLE IF NOT EXISTS `dochub_knowledge_topic_node` (
     `id` bigint NOT NULL COMMENT '主键id',
     `topic_code` varchar(64) NOT NULL COMMENT '主题编码',
     `topic_name` varchar(128) NOT NULL COMMENT '主题名称',
+    `canonical_key` varchar(191) NOT NULL COMMENT 'NFKC 规范化唯一键',
     `scope_code` varchar(64) NOT NULL COMMENT '所属知识范围编码',
     `description` varchar(1024) DEFAULT NULL COMMENT '主题描述',
     `aliases` varchar(512) DEFAULT NULL COMMENT '别名，英文逗号分隔',
@@ -355,9 +361,50 @@ CREATE TABLE IF NOT EXISTS `dochub_knowledge_topic_node` (
     `status` tinyint(1) DEFAULT '1' COMMENT '1:正常 0:删除',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_topic_code` (`topic_code`),
+    UNIQUE KEY `uk_topic_scope_canonical_key` (`scope_code`, `canonical_key`),
     KEY `idx_scope_code` (`scope_code`),
     KEY `idx_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识主题节点表';
+
+CREATE TABLE IF NOT EXISTS `dochub_knowledge_classification_review` (
+    `id` bigint NOT NULL,
+    `document_id` bigint NOT NULL,
+    `profile_version` int NOT NULL,
+    `review_status` varchar(32) NOT NULL COMMENT 'PENDING/RESOLVED/APPLIED/FAILED',
+    `decision_type` varchar(32) NOT NULL,
+    `proposed_scope_json` json DEFAULT NULL,
+    `proposed_topic_json` json DEFAULT NULL,
+    `candidate_json` json NOT NULL,
+    `evidence_json` json NOT NULL,
+    `reason` varchar(2000) DEFAULT NULL,
+    `selected_scope_code` varchar(64) DEFAULT NULL,
+    `selected_topic_code` varchar(64) DEFAULT NULL,
+    `trust_llm` tinyint(1) NOT NULL DEFAULT '0',
+    `operator` varchar(128) DEFAULT NULL,
+    `version` int NOT NULL DEFAULT '1',
+    `create_time` datetime DEFAULT NULL,
+    `edit_time` datetime DEFAULT NULL,
+    `status` tinyint(1) DEFAULT '1',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_classification_document_profile` (`document_id`, `profile_version`),
+    KEY `idx_classification_review_status` (`review_status`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='知识分类决策证据与人工审核';
+
+CREATE TABLE IF NOT EXISTS `dochub_knowledge_scope_merge_audit` (
+    `id` bigint NOT NULL,
+    `source_scope_code` varchar(64) NOT NULL,
+    `target_scope_code` varchar(64) NOT NULL,
+    `document_count` int NOT NULL DEFAULT '0',
+    `topic_count` int NOT NULL DEFAULT '0',
+    `relation_count` int NOT NULL DEFAULT '0',
+    `operator` varchar(128) NOT NULL,
+    `detail_json` json DEFAULT NULL,
+    `create_time` datetime DEFAULT NULL,
+    `edit_time` datetime DEFAULT NULL,
+    `status` tinyint(1) DEFAULT '1',
+    PRIMARY KEY (`id`),
+    KEY `idx_scope_merge_source` (`source_scope_code`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='重复知识域合并审计';
 
 
 CREATE TABLE IF NOT EXISTS `dochub_document_profile` (

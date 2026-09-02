@@ -2,6 +2,8 @@ package com.dochub.workbench.manage.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import com.dochub.workbench.manage.data.DochubKnowledgeTopicNode;
 
 /**
@@ -11,4 +13,9 @@ import com.dochub.workbench.manage.data.DochubKnowledgeTopicNode;
  **/
 @Mapper
 public interface DochubKnowledgeTopicNodeMapper extends BaseMapper<DochubKnowledgeTopicNode> {
+    @Select("SELECT GET_LOCK(CONCAT('dochub:topic:', #{scopeCode}, ':', #{canonicalKey}), 5)")
+    Integer acquireCanonicalLock(@Param("scopeCode") String scopeCode, @Param("canonicalKey") String canonicalKey);
+
+    @Select("SELECT RELEASE_LOCK(CONCAT('dochub:topic:', #{scopeCode}, ':', #{canonicalKey}))")
+    Integer releaseCanonicalLock(@Param("scopeCode") String scopeCode, @Param("canonicalKey") String canonicalKey);
 }

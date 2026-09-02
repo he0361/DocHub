@@ -69,6 +69,11 @@ public class DochubDocument extends BaseTableData {
 
     private String documentTags;
 
+    /** UNCLASSIFIED / CONFIRMED / PENDING_REVIEW / FAILED. */
+    private String classificationStatus;
+
+    private Long classificationReviewId;
+
     private Long currentPlanId;
 
     private Long lastParseTaskId;

@@ -39,6 +39,7 @@ import com.dochub.workbench.manage.mapper.DochubTopicDocumentRelationMapper;
 import com.dochub.workbench.manage.mq.DocumentKafkaProducer;
 import com.dochub.workbench.manage.mq.message.DocumentIndexBuildMessage;
 import com.dochub.workbench.manage.mq.message.DocumentParseRouteMessage;
+import com.dochub.workbench.manage.model.classify.ClassificationStatus;
 import com.dochub.workbench.manage.service.DocumentManageService;
 import com.dochub.workbench.manage.service.DocumentNavigationIndexService;
 import com.dochub.workbench.manage.service.DocumentStorageService;
@@ -50,6 +51,7 @@ import com.dochub.workbench.manage.service.DocumentVectorGateway;
 import com.dochub.workbench.manage.service.KnowledgeRouteIndexService;
 import com.dochub.workbench.manage.service.keyword.DocumentKeywordSearchGateway;
 import com.dochub.workbench.manage.support.DocumentIndexBuildProgressService;
+import com.dochub.workbench.manage.support.DocumentClassificationIndexGuard;
 import com.dochub.workbench.manage.support.StoredObjectInfo;
 import com.dochub.workbench.manage.vo.DocumentChunkItemVo;
 import com.dochub.workbench.manage.vo.DocumentChunkQueryVo;
@@ -222,6 +224,8 @@ public class DocumentManageServiceImpl implements DocumentManageService {
         document.setKnowledgeScopeName(StrUtil.trimToNull(dto.getKnowledgeScopeName()));
         document.setBusinessCategory(StrUtil.trimToNull(dto.getBusinessCategory()));
         document.setDocumentTags(StrUtil.trimToNull(dto.getDocumentTags()));
+        document.setClassificationStatus(StrUtil.isNotBlank(dto.getKnowledgeScopeCode())
+            ? ClassificationStatus.CONFIRMED.name() : ClassificationStatus.UNCLASSIFIED.name());
         document.setStatus(BusinessStatus.YES.getCode());
 
         Long taskId = uidGenerator.getUid();
@@ -565,6 +569,7 @@ public class DocumentManageServiceImpl implements DocumentManageService {
     public DocumentIndexBuildVo buildIndex(DocumentIndexBuildDto dto) {
 
         DochubDocument document = getDocumentOrThrow(dto.getDocumentId());
+        DocumentClassificationIndexGuard.requireConfirmed(document);
         if (!Objects.equals(document.getParseStatus(), DocumentParseStatusEnum.PARSE_SUCCESS.getCode())
             || !Objects.equals(document.getStrategyStatus(), DocumentStrategyStatusEnum.CONFIRMED.getCode())) {
             throw new DochubFrameException(DocumentManageCode.DOCUMENT_STATUS_INVALID.getCode(), "当前文档尚未完成“解析成功 + 策略确认”，不能构建索引。");
@@ -894,6 +899,8 @@ public class DocumentManageServiceImpl implements DocumentManageService {
             document.getKnowledgeScopeName(),
             document.getBusinessCategory(),
             document.getDocumentTags(),
+            document.getClassificationStatus(),
+            document.getClassificationReviewId(),
             document.getCurrentPlanId(),
             document.getLastIndexTaskId(),
             latestTask == null ? null : latestTask.getId(),

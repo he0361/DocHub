@@ -27,6 +27,7 @@ import com.dochub.workbench.manage.service.DocumentProfileService;
 import com.dochub.workbench.manage.service.DocumentStorageService;
 import com.dochub.workbench.manage.service.DocumentStrategyService;
 import com.dochub.workbench.manage.support.DocumentIndexBuildProgressService;
+import com.dochub.workbench.manage.support.DocumentClassificationIndexGuard;
 import com.dochub.workbench.manage.service.DocumentStructureGraphProjectionService;
 import com.dochub.workbench.manage.service.DocumentStructureNodeService;
 import com.dochub.workbench.manage.service.DocumentTaskLogService;
@@ -288,6 +289,18 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
         // Kafka 可能重复投递（自愈重投、重启后重读），对已成功/已失败/正在执行的任务直接跳过，避免重复切块入库。
         if (!DocumentTaskStatusEnum.NEW.getCode().equals(task.getTaskStatus())) {
             log.info("索引任务已处理或正在执行，跳过本次消费。taskId={}, taskStatus={}", taskId, task.getTaskStatus());
+            return;
+        }
+
+        // 消费端再次校验，阻止伪造或分类后状态变更的旧消息绕过入口闸门。
+        if (!DocumentClassificationIndexGuard.isConfirmed(document.getClassificationStatus())) {
+            task.setTaskStatus(DocumentTaskStatusEnum.FAILED.getCode());
+            task.setErrorCode(DocumentClassificationIndexGuard.failureCode(document.getClassificationStatus()));
+            task.setErrorMsg("知识域分类未确认，索引消息已拒绝。");
+            task.setFinishTime(new Date());
+            taskMapper.updateById(task);
+            log.warn("索引消费被知识分类闸门拒绝: documentId={}, taskId={}, classificationStatus={}",
+                documentId, taskId, document.getClassificationStatus());
             return;
         }
 

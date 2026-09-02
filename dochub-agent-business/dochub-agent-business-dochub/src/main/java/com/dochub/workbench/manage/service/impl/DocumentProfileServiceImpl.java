@@ -12,10 +12,10 @@ import com.dochub.workbench.manage.data.DochubDocumentStructureNode;
 import com.dochub.workbench.manage.mapper.DochubDocumentMapper;
 import com.dochub.workbench.manage.mapper.DochubDocumentProfileMapper;
 import com.dochub.workbench.manage.mapper.DochubDocumentStructureNodeMapper;
-import com.dochub.workbench.manage.model.KnowledgeClassifyResult;
+import com.dochub.workbench.manage.model.classify.ClassificationMaterial;
 import com.dochub.workbench.manage.service.DocumentProfileService;
 import com.dochub.workbench.manage.service.DocumentStorageService;
-import com.dochub.workbench.manage.service.KnowledgeScopeClassifyService;
+import com.dochub.workbench.manage.service.KnowledgeClassificationWorkflowService;
 import com.dochub.workbench.manage.support.DocumentAnalysisResult;
 import org.javaup.enums.BusinessStatus;
 import org.javaup.enums.DocumentStructureNodeTypeEnum;
@@ -46,7 +46,7 @@ public class DocumentProfileServiceImpl implements DocumentProfileService {
     private final DochubDocumentProfileMapper documentProfileMapper;
     private final DochubDocumentStructureNodeMapper structureNodeMapper;
     private final DocumentStorageService storageService;
-    private final KnowledgeScopeClassifyService knowledgeScopeClassifyService;
+    private final KnowledgeClassificationWorkflowService classificationWorkflowService;
     private final UidGenerator uidGenerator;
 
     @Override
@@ -98,6 +98,10 @@ public class DocumentProfileServiceImpl implements DocumentProfileService {
         }
 
         backfillDocumentMetadata(document, draft);
+        classificationWorkflowService.classifyAndApply(documentId, profile.getProfileVersion(), new ClassificationMaterial(
+            document.getDocumentName(), draft.documentSummary(),
+            List.of(StrUtil.blankToDefault(document.getDocumentName(), ""), StrUtil.blankToDefault(document.getOriginalFileName(), "")),
+            draft.coreTopics(), parsedText));
         log.info("文档画像生成完成: documentId={}, documentType={}, graphFriendly={}, supportsItemLookup={}, scopeCode='{}', businessCategory='{}', tags='{}'",
             documentId,
             draft.documentType(),
@@ -168,27 +172,12 @@ public class DocumentProfileServiceImpl implements DocumentProfileService {
         List<String> exampleQuestions = buildExampleQuestions(documentType, coreTopics);
         String summary = buildSummary(document, sectionTitles, parsedText);
 
-        // 优先用 LLM 对「文档内容 + 配置知识域」做归类（无合适知识域时自动生成新知识域/主题并持久化）；
-        // LLM 不可用或失败时回退到关键词规则。
-        KnowledgeClassifyResult classifyResult = knowledgeScopeClassifyService.classify(
-            document.getDocumentName(), sectionTitles, parsedText);
-        String knowledgeScopeCode;
-        String knowledgeScopeName;
-        String businessCategory;
+        // 分类只产生决策；人工指定值保持权威，未指定时由 workflow 安全应用或进入待确认。
+        String knowledgeScopeCode = StrUtil.blankToDefault(document.getKnowledgeScopeCode(), "");
+        String knowledgeScopeName = StrUtil.blankToDefault(document.getKnowledgeScopeName(), "");
+        String businessCategory = StrUtil.isNotBlank(document.getBusinessCategory())
+            ? document.getBusinessCategory() : inferBusinessCategory(documentType, parsedText);
         String llmTopic = "";
-        if (classifyResult != null && StrUtil.isNotBlank(classifyResult.scopeCode())) {
-            knowledgeScopeCode = classifyResult.scopeCode();
-            knowledgeScopeName = StrUtil.blankToDefault(classifyResult.scopeName(), inferKnowledgeScopeName(knowledgeScopeCode));
-            businessCategory = StrUtil.isNotBlank(classifyResult.businessCategory())
-                ? classifyResult.businessCategory()
-                : inferBusinessCategory(documentType, parsedText);
-            llmTopic = StrUtil.blankToDefault(classifyResult.topicName(), "");
-        }
-        else {
-            knowledgeScopeCode = inferKnowledgeScopeCode(document, sectionTitles, parsedText);
-            knowledgeScopeName = inferKnowledgeScopeName(knowledgeScopeCode);
-            businessCategory = inferBusinessCategory(documentType, parsedText);
-        }
         String documentTags = buildDocumentTags(document, knowledgeScopeCode, documentType, coreTopics, llmTopic);
         return new DocumentProfileDraft(
             summary,

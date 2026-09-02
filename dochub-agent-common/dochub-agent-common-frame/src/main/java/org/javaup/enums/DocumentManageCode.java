@@ -32,7 +32,11 @@ public enum DocumentManageCode {
 
     DOCUMENT_INDEX_UNAVAILABLE(20012, "文档当前没有可用索引"),
 
-    DOCUMENT_RETRIEVE_EMPTY(20013, "未检索到可用资料");
+    DOCUMENT_RETRIEVE_EMPTY(20013, "未检索到可用资料"),
+
+    KNOWLEDGE_CLASSIFICATION_PENDING(20014, "知识域待确认"),
+
+    KNOWLEDGE_CLASSIFICATION_FAILED(20015, "知识域分类失败");
 
     private final Integer code;
 

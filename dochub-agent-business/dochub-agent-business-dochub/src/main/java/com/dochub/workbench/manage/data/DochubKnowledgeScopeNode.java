@@ -28,6 +28,8 @@ public class DochubKnowledgeScopeNode extends BaseTableData {
 
     private String scopeName;
 
+    private String canonicalKey;
+
     private String parentScopeCode;
 
     private String description;

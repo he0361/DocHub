@@ -28,6 +28,8 @@ public class DochubKnowledgeTopicNode extends BaseTableData {
 
     private String topicName;
 
+    private String canonicalKey;
+
     private String scopeCode;
 
     private String description;

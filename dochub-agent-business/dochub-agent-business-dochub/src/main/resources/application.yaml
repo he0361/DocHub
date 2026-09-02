@@ -386,6 +386,27 @@ logging:
     com.dochub.workbench.chatagent: INFO
     com.dochub.workbench.manage: INFO
 
+dochub:
+  knowledge:
+    classification:
+      lexical-limit: 10
+      semantic-limit: 10
+      rerank-limit: 8
+      scope:
+        automatic-reuse: 0.82
+        review-lower-bound: 0.55
+        maximum-existing-for-automatic-new: 0.42
+        llm-new-confidence: 0.92
+        validator-confidence: 0.90
+        minimum-evidence-margin: 0.15
+      topic:
+        automatic-reuse: 0.82
+        review-lower-bound: 0.55
+        maximum-existing-for-automatic-new: 0.42
+        llm-new-confidence: 0.92
+        validator-confidence: 0.90
+        minimum-evidence-margin: 0.15
+
 management:
   metrics:
     tags:
