@@ -53,7 +53,9 @@ public class DefaultDocumentVectorGateway implements DocumentVectorGateway {
         if (CollUtil.isEmpty(chunkList)) {
             return;
         }
-        coordinator().ifPresent(VectorMutationCoordinator::assertMutationAllowed);
+        VectorMutationCoordinator coordinator = coordinator().orElse(null);
+        VectorMutationCoordinator.MutationPermit permit = coordinator == null ? null : coordinator.beginMutation();
+        try {
         EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
         List<DochubDocumentChunk> validChunkList = chunkList.stream()
             .filter(chunk -> chunk != null && StrUtil.isNotBlank(chunk.getChunkText()))
@@ -94,9 +96,12 @@ public class DefaultDocumentVectorGateway implements DocumentVectorGateway {
             }
             vectorStore.upsert(runtime.documentCollection(), points);
             markSuccess(currentBatch);
-            coordinator().ifPresent(value -> value.documentUpsert(currentBatch));
         }
         log.info("文档向量化(Qdrant)完成，chunkCount={}", validChunkList.size());
+        }
+        finally {
+            if (permit != null) permit.close();
+        }
     }
 
     @Override
@@ -105,12 +110,18 @@ public class DefaultDocumentVectorGateway implements DocumentVectorGateway {
             return;
         }
         try {
-            coordinator().ifPresent(VectorMutationCoordinator::assertMutationAllowed);
+            VectorMutationCoordinator coordinator = coordinator().orElse(null);
+            VectorMutationCoordinator.MutationPermit permit = coordinator == null ? null : coordinator.beginMutation();
+            try {
             Map<String, Object> filter = Map.of("must", List.of(Map.of(
                 "key", "document_id", "match", Map.of("value", documentId))));
             EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
             vectorStore.deleteByFilter(runtime.documentCollection(), filter);
-            coordinator().ifPresent(value -> value.documentDelete(documentId));
+            if (coordinator != null) coordinator.documentDelete(permit, documentId);
+            }
+            finally {
+                if (permit != null) permit.close();
+            }
         }
         catch (Exception exception) {
             throw new DochubFrameException(DocumentManageCode.DOCUMENT_VECTOR_FAILED.getCode(),

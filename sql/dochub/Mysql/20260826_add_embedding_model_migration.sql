@@ -4,10 +4,10 @@ CREATE TABLE IF NOT EXISTS dochub_embedding_model_migration (
  source_dimension INT NOT NULL, target_dimension INT NOT NULL,
  source_document_collection VARCHAR(255) NOT NULL, target_document_collection VARCHAR(255) NOT NULL,
  source_memory_collection VARCHAR(255) NOT NULL, target_memory_collection VARCHAR(255) NOT NULL,
- migration_status VARCHAR(32) NOT NULL, document_total BIGINT DEFAULT 0, document_processed BIGINT DEFAULT 0,
+ migration_status VARCHAR(32) NOT NULL, resume_status VARCHAR(32), document_total BIGINT DEFAULT 0, document_processed BIGINT DEFAULT 0,
  document_failed BIGINT DEFAULT 0, memory_total BIGINT DEFAULT 0, memory_processed BIGINT DEFAULT 0,
  memory_failed BIGINT DEFAULT 0, last_document_chunk_id BIGINT DEFAULT 0, last_memory_summary_id BIGINT DEFAULT 0,
- last_delta_sequence BIGINT DEFAULT 0, lease_owner VARCHAR(128), lease_expire_time DATETIME,
+ last_delta_sequence BIGINT DEFAULT 0, active_mutations INT NOT NULL DEFAULT 0, lease_owner VARCHAR(128), lease_expire_time DATETIME,
  error_summary VARCHAR(1024), start_time DATETIME, switch_time DATETIME, finish_time DATETIME,
  operator BIGINT, lock_version INT DEFAULT 0, create_time DATETIME, edit_time DATETIME, status TINYINT DEFAULT 1,
  KEY idx_embedding_migration_status (migration_status, status), KEY idx_embedding_migration_target (target_config_version)

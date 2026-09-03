@@ -37,6 +37,7 @@ import com.dochub.workbench.manage.support.DocumentAnalysisResult;
 import com.dochub.workbench.manage.support.DocumentStrategyPlanDraft;
 import com.dochub.workbench.manage.support.DocumentStrategyStepDraft;
 import com.dochub.workbench.manage.support.ParentBlockCandidate;
+import com.dochub.workbench.modelconfig.support.VectorMutationCoordinator;
 import org.javaup.enums.BusinessStatus;
 import org.javaup.enums.DocumentChunkSourceTypeEnum;
 import org.javaup.enums.DocumentFileTypeEnum;
@@ -108,6 +109,8 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
     private final DocumentProfileService documentProfileService;
 
     private final DocumentIndexBuildProgressService indexBuildProgressService;
+
+    private final ObjectProvider<VectorMutationCoordinator> vectorMutationCoordinatorProvider;
 
     @Resource
     private UidGenerator uidGenerator;
@@ -395,7 +398,20 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
                     "vectorStoreType", DocumentVectorStoreTypeEnum.QDRANT.getMsg(),
                     "parentCount", parentBlockEntityList.size()));
 
-            vectorGateway.vectorize(chunkEntityList);
+            VectorMutationCoordinator mutationCoordinator = vectorMutationCoordinatorProvider.getIfAvailable();
+            VectorMutationCoordinator.MutationPermit mutationPermit = mutationCoordinator == null
+                ? null : mutationCoordinator.beginMutation();
+            try {
+                vectorGateway.vectorize(chunkEntityList);
+                for (DochubDocumentChunk chunk : chunkEntityList) {
+                    chunkMapper.updateById(chunk);
+                }
+                if (mutationCoordinator != null) {
+                    mutationCoordinator.documentUpsert(mutationPermit, chunkEntityList);
+                }
+            } finally {
+                if (mutationPermit != null) mutationPermit.close();
+            }
 
             indexBuildProgressService.reportStage(documentId, taskId, DocumentTaskStageEnum.VECTORIZE, 88, "向量化完成");
 
@@ -426,10 +442,6 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
 
             indexBuildProgressService.reportStage(documentId, taskId, DocumentTaskStageEnum.KEYWORD_INDEX, 95,
                 "关键词索引完成");
-
-            for (DochubDocumentChunk chunk : chunkEntityList) {
-                chunkMapper.updateById(chunk);
-            }
 
             taskLogService.saveLog(taskId, documentId,
                 DocumentTaskStageEnum.VECTORIZE.getCode(),

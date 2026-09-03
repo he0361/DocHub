@@ -7,6 +7,7 @@ import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import com.dochub.workbench.modelconfig.support.VectorMutationCoordinator;
 import lombok.extern.slf4j.Slf4j;
+import org.javaup.exception.DochubFrameException;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.ObjectProvider;
 
@@ -52,15 +53,25 @@ public class ConversationVectorMemoryService {
             return;
         }
         try {
-            coordinator().ifPresent(VectorMutationCoordinator::assertMutationAllowed);
+            VectorMutationCoordinator coordinator = coordinator().orElse(null);
+            VectorMutationCoordinator.MutationPermit permit = coordinator == null ? null : coordinator.beginMutation();
+            try {
             EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
             float[] embedding = embed(runtime, memoryText);
             Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("summary_id", summaryId);
             payload.put("conversation_id", conversationId);
             payload.put("memory_text", memoryText);
             vectorStore.upsert(runtime.memoryCollection(),
                 List.of(new QdrantVectorStore.Point(summaryId, embedding, payload)));
-            coordinator().ifPresent(value -> value.memoryUpsert(summaryId));
+            if (coordinator != null) coordinator.memoryUpsert(permit, summaryId);
+            }
+            finally {
+                if (permit != null) permit.close();
+            }
+        }
+        catch (DochubFrameException exception) {
+            throw exception;
         }
         catch (Exception exception) {
             log.warn("保存会话长期记忆失败: {}", exception.getMessage());
@@ -102,6 +113,20 @@ public class ConversationVectorMemoryService {
             throw new IllegalStateException("记忆向量化为空。");
         }
         return embeddings.get(0);
+    }
+
+    public void deleteMemory(Long summaryId) {
+        if (summaryId == null) return;
+        VectorMutationCoordinator coordinator = coordinator().orElse(null);
+        VectorMutationCoordinator.MutationPermit permit = coordinator == null ? null : coordinator.beginMutation();
+        try {
+            EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
+            vectorStore.deletePoints(runtime.memoryCollection(), List.of(summaryId));
+            if (coordinator != null) coordinator.memoryDelete(permit, summaryId);
+        }
+        finally {
+            if (permit != null) permit.close();
+        }
     }
 
     private java.util.Optional<VectorMutationCoordinator> coordinator() {

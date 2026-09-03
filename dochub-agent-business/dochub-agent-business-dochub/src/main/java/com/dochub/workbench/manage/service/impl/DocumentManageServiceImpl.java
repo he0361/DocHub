@@ -68,6 +68,7 @@ import com.dochub.workbench.manage.vo.DocumentStrategyStepVo;
 import com.dochub.workbench.manage.vo.DocumentTaskLogQueryVo;
 import com.dochub.workbench.manage.vo.DocumentTaskLogVo;
 import com.dochub.workbench.manage.vo.DocumentUploadVo;
+import com.dochub.workbench.modelconfig.support.VectorMutationCoordinator;
 import org.javaup.enums.BaseCode;
 import org.javaup.enums.BusinessStatus;
 import org.javaup.enums.DocumentChunkSourceTypeEnum;
@@ -162,6 +163,8 @@ public class DocumentManageServiceImpl implements DocumentManageService {
     private final TransactionTemplate transactionTemplate;
 
     private final DocumentIndexBuildProgressService indexBuildProgressService;
+
+    private final ObjectProvider<VectorMutationCoordinator> vectorMutationCoordinatorProvider;
     
     private final UidGenerator uidGenerator;
 
@@ -563,6 +566,11 @@ public class DocumentManageServiceImpl implements DocumentManageService {
 
     @Override
     public DocumentIndexBuildVo buildIndex(DocumentIndexBuildDto dto) {
+
+        VectorMutationCoordinator mutationCoordinator = vectorMutationCoordinatorProvider.getIfAvailable();
+        if (mutationCoordinator != null) {
+            mutationCoordinator.assertMutationAllowed();
+        }
 
         DochubDocument document = getDocumentOrThrow(dto.getDocumentId());
         if (!Objects.equals(document.getParseStatus(), DocumentParseStatusEnum.PARSE_SUCCESS.getCode())

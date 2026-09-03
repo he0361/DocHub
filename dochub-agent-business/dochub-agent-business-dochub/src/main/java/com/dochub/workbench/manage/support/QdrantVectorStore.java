@@ -225,6 +225,36 @@ public class QdrantVectorStore {
         return number.intValue();
     }
 
+    /** Returns one real point, including its vector, for pre-switch search verification. */
+    @SuppressWarnings("unchecked")
+    public SamplePoint sample(String collection) {
+        Map<String, Object> response = restClient.post()
+            .uri("/collections/{name}/points/scroll", collection)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("limit", 1, "with_payload", true, "with_vector", true))
+            .retrieve()
+            .body(Map.class);
+        Object result = response == null ? null : response.get("result");
+        Object points = result instanceof Map<?, ?> map ? map.get("points") : null;
+        if (!(points instanceof List<?> list) || list.isEmpty() || !(list.get(0) instanceof Map<?, ?> point)) {
+            return null;
+        }
+        Object idValue = point.get("id");
+        Object vectorValue = point.get("vector");
+        if (idValue == null || !(vectorValue instanceof List<?> vectorList) || vectorList.isEmpty()) {
+            throw new IllegalStateException("Qdrant 样本点缺少 id 或 vector: " + collection);
+        }
+        float[] vector = new float[vectorList.size()];
+        for (int index = 0; index < vectorList.size(); index++) {
+            Object value = vectorList.get(index);
+            if (!(value instanceof Number number)) throw new IllegalStateException("Qdrant 样本向量格式无效: " + collection);
+            vector[index] = number.floatValue();
+        }
+        Object payload = point.get("payload");
+        Map<String, Object> payloadMap = payload instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+        return new SamplePoint(Long.parseLong(String.valueOf(idValue)), vector, payloadMap);
+    }
+
     public String documentCollection() {
         return properties.getDocumentCollection();
     }
@@ -237,5 +267,8 @@ public class QdrantVectorStore {
     }
 
     public record SearchHit(long id, double score, Map<String, Object> payload) {
+    }
+
+    public record SamplePoint(long id, float[] vector, Map<String, Object> payload) {
     }
 }

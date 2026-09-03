@@ -25,6 +25,7 @@ public class DochubEmbeddingModelMigration extends BaseTableData {
     private String sourceMemoryCollection;
     private String targetMemoryCollection;
     private String migrationStatus;
+    private String resumeStatus;
     private Long documentTotal;
     private Long documentProcessed;
     private Long documentFailed;
@@ -34,6 +35,7 @@ public class DochubEmbeddingModelMigration extends BaseTableData {
     private Long lastDocumentChunkId;
     private Long lastMemorySummaryId;
     private Long lastDeltaSequence;
+    private Integer activeMutations;
     private String leaseOwner;
     private Date leaseExpireTime;
     private String errorSummary;

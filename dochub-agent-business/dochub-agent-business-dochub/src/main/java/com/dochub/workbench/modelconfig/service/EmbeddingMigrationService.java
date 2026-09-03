@@ -10,4 +10,6 @@ public interface EmbeddingMigrationService {
     void schedule(Long migrationId);
     void retry(Long migrationId);
     boolean finalizing();
+    Long beginMutation();
+    void finishMutation(Long migrationId);
 }

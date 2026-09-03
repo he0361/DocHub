@@ -568,10 +568,10 @@ CREATE TABLE IF NOT EXISTS `dochub_embedding_model_migration` (
     `source_dimension` int NOT NULL, `target_dimension` int NOT NULL,
     `source_document_collection` varchar(255) NOT NULL, `target_document_collection` varchar(255) NOT NULL,
     `source_memory_collection` varchar(255) NOT NULL, `target_memory_collection` varchar(255) NOT NULL,
-    `migration_status` varchar(32) NOT NULL, `document_total` bigint DEFAULT 0, `document_processed` bigint DEFAULT 0,
+    `migration_status` varchar(32) NOT NULL, `resume_status` varchar(32) DEFAULT NULL, `document_total` bigint DEFAULT 0, `document_processed` bigint DEFAULT 0,
     `document_failed` bigint DEFAULT 0, `memory_total` bigint DEFAULT 0, `memory_processed` bigint DEFAULT 0,
     `memory_failed` bigint DEFAULT 0, `last_document_chunk_id` bigint DEFAULT 0, `last_memory_summary_id` bigint DEFAULT 0,
-    `last_delta_sequence` bigint DEFAULT 0, `lease_owner` varchar(128), `lease_expire_time` datetime,
+    `last_delta_sequence` bigint DEFAULT 0, `active_mutations` int NOT NULL DEFAULT 0, `lease_owner` varchar(128), `lease_expire_time` datetime,
     `error_summary` varchar(1024), `start_time` datetime, `switch_time` datetime, `finish_time` datetime,
     `operator` bigint, `lock_version` int DEFAULT 0, `create_time` datetime, `edit_time` datetime, `status` tinyint DEFAULT 1,
     PRIMARY KEY (`id`), KEY `idx_embedding_migration_status` (`migration_status`, `status`)

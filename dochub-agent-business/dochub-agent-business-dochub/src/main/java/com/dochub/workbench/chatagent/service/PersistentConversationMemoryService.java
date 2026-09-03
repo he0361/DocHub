@@ -221,6 +221,7 @@ public class PersistentConversationMemoryService implements ConversationMemorySe
             return getConversationSummary(conversationId);
         }
         try {
+            deleteVectorSummaries(conversationId);
             summaryMapper.delete(new LambdaQueryWrapper<DochubChatMemorySummary>()
                 .eq(DochubChatMemorySummary::getConversationId, conversationId));
             DochubChatMemorySummary rebuiltState = refreshSummaryIfNecessary(conversationId, null, null);
@@ -236,8 +237,18 @@ public class PersistentConversationMemoryService implements ConversationMemorySe
         if (StrUtil.isBlank(conversationId)) {
             return;
         }
+        deleteVectorSummaries(conversationId);
         summaryMapper.delete(new LambdaQueryWrapper<DochubChatMemorySummary>()
             .eq(DochubChatMemorySummary::getConversationId, conversationId));
+    }
+
+    private void deleteVectorSummaries(String conversationId) {
+        List<DochubChatMemorySummary> summaries = summaryMapper.selectList(new LambdaQueryWrapper<DochubChatMemorySummary>()
+            .eq(DochubChatMemorySummary::getConversationId, conversationId));
+        if (summaries == null) return;
+        for (DochubChatMemorySummary summary : summaries) {
+            if (summary != null && summary.getId() != null) conversationVectorMemoryService.deleteMemory(summary.getId());
+        }
     }
 
     private DochubChatMemorySummary refreshSummaryIfNecessary(String conversationId,
