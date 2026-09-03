@@ -670,6 +670,34 @@ export const manageApi = {
       method: 'POST',
       body: stringifyManageValue(payload)
     })
+  },
+
+  listKnowledgeClassificationReviews(payload = {}) {
+    return requestApiEnvelope('/manage/knowledge/classification/review/list', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  getKnowledgeClassificationReview(payload) {
+    return requestApiEnvelope('/manage/knowledge/classification/review/detail', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  resolveKnowledgeClassificationReview(payload) {
+    return requestApiEnvelope('/manage/knowledge/classification/review/resolve', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  mergeKnowledgeScope(payload) {
+    return requestApiEnvelope('/manage/knowledge/scope/merge', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
   }
 }
 

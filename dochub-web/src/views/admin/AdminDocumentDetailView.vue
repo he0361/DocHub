@@ -543,6 +543,18 @@
             <span class="workbench-section-pill">{{ executionSectionStatusText }}</span>
           </div>
 
+          <KnowledgeClassificationReviewPanel
+            v-if="classificationPending && classificationReview"
+            :review="classificationReview"
+            :scopes="classificationScopes"
+            :topics="classificationTopics"
+            :loading="classificationReviewLoading"
+            @resolve="resolveClassificationReview"
+          />
+          <div v-else-if="classificationPending" class="inline-notice inline-notice-warning">
+            知识域待确认，审核数据加载完成前不能构建索引。请刷新页面或前往知识路由配置检查待审核项。
+          </div>
+
           <div class="execution-summary-grid">
             <article class="execution-summary-card">
               <span>策略确认</span>
@@ -949,6 +961,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeftIcon, ArrowRightIcon, CheckCircleIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import { APIError, manageApi } from '../../api/api'
 import AdminStatusBadge from '../../components/admin/AdminStatusBadge.vue'
+import KnowledgeClassificationReviewPanel from '../../components/admin/KnowledgeClassificationReviewPanel.vue'
 import { formatCount, formatDateTime, hasCode, normalizeCode } from '../../utils/manageFormat'
 import {
   STRATEGY_LIBRARY,
@@ -982,6 +995,9 @@ const BUILD_STAGE_LIBRARY = [
 const BUILD_STAGE_CODE_SET = new Set(BUILD_STAGE_LIBRARY.map((item) => item.code))
 
 const documentDetail = ref(null)
+const classificationReview = ref(null)
+const classificationScopes = ref([])
+const classificationTopics = ref([])
 const strategyPlan = ref(null)
 const selectedParentStrategyTypes = ref([])
 const selectedChildStrategyTypes = ref([])
@@ -1003,6 +1019,7 @@ const buildLoading = ref(false)
 const logLoading = ref(false)
 const chunkLoading = ref(false)
 const chunkDetailLoading = ref(false)
+const classificationReviewLoading = ref(false)
 const logDrawerOpen = ref(false)
 const chunkDetailDrawerOpen = ref(false)
 const planPollTimer = ref(null)
@@ -1145,7 +1162,10 @@ const canBuildIndexAction = computed(() => {
     && hasConfirmedStrategy.value
     && !hasUnconfirmedStrategyChanges.value
     && !hasBuildInFlightStatus.value
+    && !classificationPending.value
 })
+
+const classificationPending = computed(() => documentDetail.value?.classificationStatus === 'PENDING_REVIEW')
 
 const confirmStepState = computed(() => {
   if (confirmLoading.value) {
@@ -1165,6 +1185,9 @@ const buildStepState = computed(() => {
     return 'current'
   }
   if (!hasSelectedStrategy.value || !hasConfirmedStrategy.value || hasUnconfirmedStrategyChanges.value) {
+    return 'locked'
+  }
+  if (classificationPending.value) {
     return 'locked'
   }
   return 'ready'
@@ -1262,6 +1285,9 @@ const buildStepDescription = computed(() => {
   if (hasBuildInFlightStatus.value) {
     return `当前执行到「${activeBuildStageLabel.value || '索引构建中'}」，页面已暂时锁定并会实时刷新步骤进度。`
   }
+  if (classificationPending.value) {
+    return '知识域仍在待确认状态。请选择现有知识域/主题，或明确相信当前保存的 LLM 提案后再构建。'
+  }
   if (!hasSelectedStrategy.value) {
     return '当前还没有完整的父块 / 子块流水线，请先从上方补齐两条流水线。'
   }
@@ -1296,6 +1322,9 @@ const buildButtonLabel = computed(() => {
   }
   if (hasBuildInFlightStatus.value) {
     return '索引构建执行中'
+  }
+  if (classificationPending.value) {
+    return '请先确认知识域'
   }
   if (!hasConfirmedStrategy.value) {
     return '先确认策略方案'
@@ -1790,6 +1819,26 @@ async function loadDocumentDetail() {
   documentDetail.value = await manageApi.queryDocumentDetail(documentId.value)
 }
 
+async function loadClassificationReview() {
+  if (!classificationPending.value) {
+    classificationReview.value = null
+    return
+  }
+  classificationReviewLoading.value = true
+  try {
+    const [reviews, scopes, topics] = await Promise.all([
+      manageApi.listKnowledgeClassificationReviews({ documentId: documentId.value, reviewStatus: 'PENDING', pageNo: 1, pageSize: 5 }),
+      manageApi.listKnowledgeScopes(),
+      manageApi.listKnowledgeTopics()
+    ])
+    classificationReview.value = Array.isArray(reviews) ? reviews[0] || null : null
+    classificationScopes.value = Array.isArray(scopes) ? scopes : []
+    classificationTopics.value = Array.isArray(topics) ? topics : []
+  } finally {
+    classificationReviewLoading.value = false
+  }
+}
+
 async function loadStrategyPlan() {
   planLoading.value = true
   try {
@@ -1916,6 +1965,7 @@ async function loadAll() {
     await loadDocumentDetail()
     await Promise.all([
       loadStrategyPlan(),
+      loadClassificationReview(),
       loadTaskLogs(),
       loadBuildTaskLogs(),
       loadIndexBuildProgress(),
@@ -1965,6 +2015,10 @@ async function submitConfirmStrategy() {
 }
 
 async function submitBuildIndex() {
+  if (classificationPending.value) {
+    showNotice('知识域待确认，请先完成知识分类审核再构建索引。', 'danger')
+    return
+  }
   if (!hasSelectedStrategy.value) {
     showNotice('请先选择并确认父块 / 子块双流水线，再执行索引构建。', 'danger')
     return
@@ -1999,6 +2053,20 @@ async function submitBuildIndex() {
     showNotice(normalizeError(error, '构建索引失败'), 'danger')
   } finally {
     buildLoading.value = false
+  }
+}
+
+async function resolveClassificationReview(payload) {
+  classificationReviewLoading.value = true
+  clearNotice()
+  try {
+    await manageApi.resolveKnowledgeClassificationReview(payload)
+    showNotice('知识分类已确认，现在可以继续构建索引。', 'success')
+    await loadAll()
+  } catch (error) {
+    showNotice(normalizeError(error, '知识分类确认失败'), 'danger')
+  } finally {
+    classificationReviewLoading.value = false
   }
 }
 

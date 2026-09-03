@@ -27,7 +27,10 @@ public class KnowledgeRouteCandidateServiceImpl implements KnowledgeRouteCandida
             .map(route -> {
                 double identity = Math.max(bestIdentity(material.projectIdentifiers(), route.identifiers()),
                     similarity(material.titleAndSummary(), String.join(" ", route.nameAndAliases())));
-                double description = similarity(material.semanticText(), route.descriptionAndExamples());
+                double description = route.semanticEvidence().stream()
+                    .mapToDouble(evidence -> similarity(material.semanticText(), evidence))
+                    .max()
+                    .orElse(0);
                 double topic = similarity(String.join(" ", material.topics()), route.topicNamesAndAliases());
                 double score = clamp(identity * .50 + description * .30 + topic * .20);
                 return new RouteCandidate(route, score, 0, score,
@@ -62,7 +65,11 @@ public class KnowledgeRouteCandidateServiceImpl implements KnowledgeRouteCandida
         Set<String> bParts = parts(right);
         long overlap = aParts.stream().filter(bParts::contains).count();
         double token = aParts.isEmpty() || bParts.isEmpty() ? 0 : (2d * overlap) / (aParts.size() + bParts.size());
-        return Math.max(token, dice(a, b));
+        double coverage = aParts.isEmpty() || bParts.isEmpty() ? 0
+            : (double) overlap / Math.min(aParts.size(), bParts.size());
+        // A route description is intentionally much shorter than a document profile. Coverage keeps
+        // that asymmetric evidence strong without lowering the global reuse threshold.
+        return Math.max(Math.max(token, dice(a, b)), coverage * .9);
     }
 
     private Set<String> parts(String text) {

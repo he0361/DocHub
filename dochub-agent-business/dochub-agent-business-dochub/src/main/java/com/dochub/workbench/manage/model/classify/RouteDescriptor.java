@@ -14,6 +14,14 @@ public record RouteDescriptor(String routeCode, String routeName, List<String> a
     public List<String> identifiers() { return join(routeCode, routeName, aliases); }
     public List<String> nameAndAliases() { return join(routeName, routeCode, aliases); }
     public String descriptionAndExamples() { return safe(description) + " " + String.join(" ", examples) + " " + String.join(" ", documentEvidence); }
+    public List<String> semanticEvidence() {
+        java.util.ArrayList<String> values = new java.util.ArrayList<>();
+        if (!safe(description).isBlank()) values.add(description);
+        examples.stream().filter(value -> !safe(value).isBlank()).forEach(values::add);
+        documentEvidence.stream().filter(value -> !safe(value).isBlank()).forEach(values::add);
+        if (values.isEmpty()) values.add("");
+        return List.copyOf(values);
+    }
     public String topicNamesAndAliases() { return String.join(" ", topicNames); }
     public String searchableText() { return String.join(" ", identifiers()) + " " + descriptionAndExamples() + " " + topicNamesAndAliases(); }
 

@@ -12,6 +12,7 @@ import com.dochub.workbench.manage.dto.KnowledgeRouteTraceQueryDto;
 import com.dochub.workbench.manage.dto.KnowledgeClassificationReviewQueryDto;
 import com.dochub.workbench.manage.dto.KnowledgeClassificationResolveDto;
 import com.dochub.workbench.manage.dto.KnowledgeScopeDeleteDto;
+import com.dochub.workbench.manage.dto.KnowledgeScopeMergeDto;
 import com.dochub.workbench.manage.dto.KnowledgeScopeSaveDto;
 import com.dochub.workbench.manage.dto.KnowledgeTopicDeleteDto;
 import com.dochub.workbench.manage.dto.KnowledgeTopicQueryDto;
@@ -20,11 +21,13 @@ import com.dochub.workbench.manage.dto.TopicDocumentRelationListQueryDto;
 import com.dochub.workbench.manage.dto.TopicDocumentRelationRemoveDto;
 import com.dochub.workbench.manage.dto.TopicDocumentRelationSaveDto;
 import com.dochub.workbench.manage.service.KnowledgeManageService;
+import com.dochub.workbench.manage.service.KnowledgeScopeMergeService;
 import com.dochub.workbench.manage.service.KnowledgeClassificationReviewService;
 import com.dochub.workbench.manage.vo.DocumentProfileVo;
 import com.dochub.workbench.manage.vo.KnowledgeRouteTracePageVo;
 import com.dochub.workbench.manage.vo.KnowledgeClassificationReviewVo;
 import com.dochub.workbench.manage.vo.KnowledgeScopeItemVo;
+import com.dochub.workbench.manage.vo.KnowledgeScopeMergeVo;
 import com.dochub.workbench.manage.vo.KnowledgeTopicItemVo;
 import com.dochub.workbench.manage.vo.TopicDocumentRelationItemVo;
 import org.javaup.common.ApiResponse;
@@ -47,13 +50,16 @@ public class KnowledgeManageController {
     private final KnowledgeManageService knowledgeManageService;
     private final KnowledgeClassificationReviewService classificationReviewService;
     private final SuperAdminGuard superAdminGuard;
+    private final KnowledgeScopeMergeService scopeMergeService;
 
     public KnowledgeManageController(KnowledgeManageService knowledgeManageService,
                                      KnowledgeClassificationReviewService classificationReviewService,
-                                     SuperAdminGuard superAdminGuard) {
+                                     SuperAdminGuard superAdminGuard,
+                                     KnowledgeScopeMergeService scopeMergeService) {
         this.knowledgeManageService = knowledgeManageService;
         this.classificationReviewService = classificationReviewService;
         this.superAdminGuard = superAdminGuard;
+        this.scopeMergeService = scopeMergeService;
     }
 
     @Operation(summary = "保存知识范围节点")
@@ -72,6 +78,13 @@ public class KnowledgeManageController {
     @PostMapping("/scope/list")
     public ApiResponse<List<KnowledgeScopeItemVo>> listScopes() {
         return ApiResponse.ok(knowledgeManageService.listScopes());
+    }
+
+    @Operation(summary = "合并重复知识域")
+    @PostMapping("/scope/merge")
+    public ApiResponse<KnowledgeScopeMergeVo> mergeScope(HttpServletRequest request,
+                                                          @Valid @RequestBody KnowledgeScopeMergeDto dto) {
+        return ApiResponse.ok(scopeMergeService.merge(requireSuperAdmin(request), dto));
     }
 
     @Operation(summary = "保存知识主题节点")

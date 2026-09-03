@@ -14,4 +14,12 @@ public interface DochubKnowledgeClassificationReviewMapper extends BaseMapper<Do
     int resolvePending(@Param("id") Long id, @Param("version") Integer version,
                        @Param("scopeCode") String scopeCode, @Param("topicCode") String topicCode,
                        @Param("trustLlm") Integer trustLlm, @Param("operator") String operator);
+
+    @Update("UPDATE dochub_knowledge_classification_review SET selected_scope_code=#{targetCode}, edit_time=NOW() " +
+        "WHERE selected_scope_code=#{sourceCode} AND status=1")
+    int replaceSelectedScopeCode(@Param("sourceCode") String sourceCode, @Param("targetCode") String targetCode);
+
+    @Update("UPDATE dochub_knowledge_classification_review SET selected_topic_code=#{targetCode}, edit_time=NOW() " +
+        "WHERE selected_topic_code=#{sourceCode} AND status=1")
+    int replaceSelectedTopicCode(@Param("sourceCode") String sourceCode, @Param("targetCode") String targetCode);
 }

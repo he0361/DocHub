@@ -7,6 +7,9 @@
         <p>按 范围 → 主题 → 画像 → 关联 的顺序逐步配置，构建自动知识问答的候选预选体系。</p>
       </div>
       <div class="header-actions">
+        <button class="ghost-button" type="button" :disabled="scopes.length < 2 || mergeLoading" @click="openMergeDialog">
+          合并重复知识域
+        </button>
         <button class="ghost-button" type="button" :disabled="loading || actionLoading" @click="loadAll">刷新数据</button>
         <button class="primary-button" type="button" :disabled="!documents.length || batchLoading" @click="regenerateAllProfiles">
           {{ batchLoading ? '批量重建中...' : '批量重建画像' }}
@@ -454,12 +457,24 @@
         </div>
       </aside>
     </transition>
+    <KnowledgeScopeMergeDialog
+      :open="mergeDialogOpen"
+      :source-scope-code="activeScopeCode"
+      :scopes="scopes"
+      :topics="topics"
+      :documents="documents"
+      :relations="allRelations"
+      :loading="mergeLoading"
+      @close="mergeDialogOpen = false"
+      @merge="mergeScope"
+    />
   </section>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { manageApi } from '../../api/api'
+import KnowledgeScopeMergeDialog from '../../components/admin/KnowledgeScopeMergeDialog.vue'
 
 const OPERATOR_ID = '10001'
 const ANSWER_SHAPE_OPTIONS = Object.freeze([
@@ -511,6 +526,8 @@ const PROFILE_SOURCE_LABEL_MAP = Object.freeze(
 const loading = ref(false)
 const actionLoading = ref(false)
 const batchLoading = ref(false)
+const mergeLoading = ref(false)
+const mergeDialogOpen = ref(false)
 const scopes = ref([])
 const topics = ref([])
 const documents = ref([])
@@ -918,6 +935,25 @@ function focusCoverageScope(item) {
 function showNotice(message, type = 'info') {
   notice.message = message
   notice.type = type
+}
+
+function openMergeDialog() {
+  mergeDialogOpen.value = true
+}
+
+async function mergeScope(payload) {
+  mergeLoading.value = true
+  try {
+    const result = await manageApi.mergeKnowledgeScope(payload)
+    mergeDialogOpen.value = false
+    activeScopeCode.value = result?.targetScopeCode || payload.targetScopeCode
+    showNotice(`知识域合并完成：迁移 ${result?.documentCount || 0} 个文档、${result?.topicCount || 0} 个主题、${result?.relationCount || 0} 条关系。`, 'success')
+    await loadAll()
+  } catch (error) {
+    showNotice(error.message || '知识域合并失败', 'danger')
+  } finally {
+    mergeLoading.value = false
+  }
 }
 
 function resetScopeForm() {
