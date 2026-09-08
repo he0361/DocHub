@@ -89,8 +89,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     @Override
     public ModelConnectionTestVo testChat(String username, ModelConfigTestDto dto) {
         AdminUserEntity operator = adminGuard.require(username);
-        requireCipher();
         Candidate candidate = candidate(dto, activeChat(), false);
+        requireCipherForRemote(candidate.deploymentType());
         try {
             ChatModel model = factory.chatModel(candidate.spec());
             connectionTester.test(model, candidate.toolCallingSupported());
@@ -107,8 +107,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigVo saveChat(String username, ModelConfigSaveDto dto) {
         AdminUserEntity operator = adminGuard.require(username);
-        requireCipher();
         Candidate candidate = candidate(dto, activeChat(), dto != null && Boolean.TRUE.equals(dto.getClearApiKey()));
+        requireCipherForRemote(candidate.deploymentType());
         ChatModel model = factory.chatModel(candidate.spec());
         try {
             connectionTester.test(model, candidate.toolCallingSupported());
@@ -160,8 +160,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         return toVo(saved);
     }
 
-    private void requireCipher() {
-        if (!cipher.isAvailable()) {
+    private void requireCipherForRemote(String deploymentType) {
+        if ("REMOTE".equals(deploymentType) && !cipher.isAvailable()) {
             throw new DochubFrameException(400, "模型配置加密密钥未配置");
         }
     }

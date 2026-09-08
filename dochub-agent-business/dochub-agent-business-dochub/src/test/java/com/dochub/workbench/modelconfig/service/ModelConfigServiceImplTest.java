@@ -49,9 +49,9 @@ class ModelConfigServiceImplTest {
         com.dochub.workbench.auth.data.AdminUserEntity administrator = new com.dochub.workbench.auth.data.AdminUserEntity();
         administrator.setId(1L);
         when(adminGuard.require("admin")).thenReturn(administrator);
-        ModelCredentialCipher cipher = new ModelCredentialCipher(Base64.getEncoder().encodeToString(new byte[32]));
+        ModelCredentialCipher cipher = new ModelCredentialCipher("");
         DochubAiModelConfig current = new DochubAiModelConfig();
-        current.setEncryptedApiKey(cipher.encrypt("old-remote-secret"));
+        current.setEncryptedApiKey("previously-encrypted-remote-secret");
         when(configMapper.selectOne(any())).thenReturn(current);
         ModelConfigServiceImpl service = new ModelConfigServiceImpl(configMapper,
             mock(DochubAiModelConfigAuditMapper.class), mock(UidGenerator.class), new ModelRuntimeRegistry(), factory,

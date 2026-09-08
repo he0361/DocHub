@@ -40,6 +40,16 @@ class OpenAiCompatibleModelFactoryTest {
     }
 
     @Test
+    void localQwenVllmDisablesThinkingThroughChatTemplateArguments() {
+        ModelRuntimeSpec localQwen = new ModelRuntimeSpec(ModelType.CHAT, CompatibilityPreset.OPENAI_COMPATIBLE,
+            "http://192.168.10.228:8000", "/v1/chat/completions", "/v1/embeddings", "", "Qwen3.8-27B",
+            0.7, 2048, 30_000);
+
+        assertThat(factory.chatOptions(localQwen).getExtraBody())
+            .containsEntry("chat_template_kwargs", java.util.Map.of("enable_thinking", false));
+    }
+
+    @Test
     void configuresBothHttpClientBuildersWithTheCandidateTimeout() {
         RecordingHttpClientBuilders builders = new RecordingHttpClientBuilders();
         OpenAiCompatibleModelFactory factory = new OpenAiCompatibleModelFactory(builders);

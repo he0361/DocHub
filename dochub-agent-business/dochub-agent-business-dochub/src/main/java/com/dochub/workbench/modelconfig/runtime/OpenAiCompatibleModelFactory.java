@@ -58,9 +58,20 @@ public final class OpenAiCompatibleModelFactory {
         Map<String, Object> extraBody = switch (spec.compatibilityPreset()) {
             case DASHSCOPE -> Map.of("enable_thinking", false);
             case OLLAMA -> Map.of("think", false);
-            case OPENAI_COMPATIBLE -> Map.of();
+            case OPENAI_COMPATIBLE -> localQwenVllmOptions(spec);
         };
         return builder.extraBody(extraBody).build();
+    }
+
+    /**
+     * vLLM exposes Qwen through the OpenAI protocol but accepts Qwen's thinking switch inside
+     * chat_template_kwargs. It is limited to unauthenticated local Qwen runtimes so generic
+     * hosted OpenAI-compatible providers never receive a provider-specific field.
+     */
+    private Map<String, Object> localQwenVllmOptions(ModelRuntimeSpec spec) {
+        boolean localQwen = spec.apiKey().isBlank()
+            && spec.modelName().toLowerCase(java.util.Locale.ROOT).startsWith("qwen");
+        return localQwen ? Map.of("chat_template_kwargs", Map.of("enable_thinking", false)) : Map.of();
     }
 
     private OpenAiApi openAiApi(ModelRuntimeSpec spec) {
