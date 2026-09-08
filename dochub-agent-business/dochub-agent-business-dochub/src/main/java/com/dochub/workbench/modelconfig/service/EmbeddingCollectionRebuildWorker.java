@@ -20,6 +20,7 @@ import com.dochub.workbench.modelconfig.security.ModelCredentialCipher;
 import com.dochub.workbench.modelconfig.support.EmbeddingMigrationLease;
 import org.javaup.exception.DochubFrameException;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -45,6 +46,7 @@ public class EmbeddingCollectionRebuildWorker {
     private final EmbeddingRuntimeActivator activator;
     private final EmbeddingMigrationLease lease;
 
+    @Autowired
     public EmbeddingCollectionRebuildWorker(DochubEmbeddingModelMigrationMapper migrationMapper,
                                             DochubAiModelConfigMapper configMapper,
                                             DochubDocumentChunkMapper chunkMapper,

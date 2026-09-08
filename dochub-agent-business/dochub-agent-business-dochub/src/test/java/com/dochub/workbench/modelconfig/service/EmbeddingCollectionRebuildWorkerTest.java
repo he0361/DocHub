@@ -10,7 +10,9 @@ import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
 import com.dochub.workbench.modelconfig.support.VersionedVectorCollectionNames;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.beans.factory.annotation.Autowired;
 
+import java.lang.reflect.Constructor;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,6 +23,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class EmbeddingCollectionRebuildWorkerTest {
+    @Test
+    void productionConstructorIsExplicitlySelectedForSpringInjection() {
+        Constructor<?> productionConstructor = java.util.Arrays.stream(EmbeddingCollectionRebuildWorker.class.getDeclaredConstructors())
+            .filter(constructor -> constructor.getParameterCount() == 11)
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(productionConstructor.isAnnotationPresent(Autowired.class)).isTrue();
+    }
+
     @Test
     void targetCollectionsAreVersionedTogether() {
         VersionedVectorCollectionNames names = VersionedVectorCollectionNames.from("dochub_document", "dochub_memory", 8L);
