@@ -77,6 +77,16 @@ public class AdminAuthServiceImpl implements AdminAuthService {
         return new AdminProfileVo(user.getUsername(), user.getDisplayName(), isAdmin, permissions);
     }
 
+    @Override
+    public boolean verifyCurrentPassword(String username, String password) {
+        AdminUserEntity user = adminUserMapper.selectOne(new LambdaQueryWrapper<AdminUserEntity>()
+            .eq(AdminUserEntity::getUsername, StrUtil.trim(username))
+            .last("LIMIT 1"));
+        return user != null
+            && user.getStatus() != null && user.getStatus() == BusinessStatus.YES.getCode()
+            && passwordHasher.matches(password, user.getPasswordHash());
+    }
+
     private List<String> splitPermissions(String permissions) {
         if (StrUtil.isBlank(permissions)) {
             return List.of();

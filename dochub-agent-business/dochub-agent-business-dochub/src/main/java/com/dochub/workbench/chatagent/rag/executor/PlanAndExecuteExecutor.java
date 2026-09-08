@@ -9,9 +9,12 @@ import com.alibaba.cloud.ai.graph.streaming.StreamingOutput;
 import com.dochub.workbench.chatagent.config.ChatAgentProperties;
 import com.dochub.workbench.chatagent.model.trace.ConversationTraceStageCode;
 import com.dochub.workbench.chatagent.rag.model.ExecutionMode;
+import com.dochub.workbench.chatagent.rag.model.AgentTurnContext;
 import com.dochub.workbench.chatagent.rag.model.PlanStep;
+import com.dochub.workbench.chatagent.rag.service.AgentTurnContextFactory;
 import com.dochub.workbench.chatagent.rag.support.ExecutorEventSupport;
 import com.dochub.workbench.chatagent.service.ConversationTraceRecorder;
+import com.dochub.workbench.chatagent.service.ChatCheckpointManager;
 import com.dochub.workbench.chatagent.service.TaskInfo;
 import com.dochub.workbench.chatagent.support.StreamEventWriter;
 import com.dochub.workbench.prompt.PromptTemplateNames;
@@ -59,19 +62,25 @@ public class PlanAndExecuteExecutor implements ConversationExecutor {
     private final StreamEventWriter streamEventWriter;
     private final ChatAgentProperties properties;
     private final ObjectMapper objectMapper;
+    private final AgentTurnContextFactory turnContextFactory;
+    private final ChatCheckpointManager checkpointManager;
 
     public PlanAndExecuteExecutor(ChatModel chatModel,
                                   ReactAgent businessChatReactAgent,
                                   PromptTemplateService promptTemplateService,
                                   StreamEventWriter streamEventWriter,
                                   ChatAgentProperties properties,
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper,
+                                  AgentTurnContextFactory turnContextFactory,
+                                  ChatCheckpointManager checkpointManager) {
         this.chatModel = chatModel;
         this.reactAgent = businessChatReactAgent;
         this.promptTemplateService = promptTemplateService;
         this.streamEventWriter = streamEventWriter;
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.turnContextFactory = turnContextFactory;
+        this.checkpointManager = checkpointManager;
     }
 
     @Override
@@ -180,8 +189,11 @@ public class PlanAndExecuteExecutor implements ConversationExecutor {
             ? null
             : traceRecorder.startStage(ConversationTraceStageCode.STEP_EXECUTE, mode().name(), label, null);
         AtomicBoolean streamedText = new AtomicBoolean(false);
+        AgentTurnContext turnContext = turnContextFactory.create(
+            taskInfo.conversationId(), taskInfo.exchangeId(), "step-" + index, taskInfo.runnableConfig());
+        taskInfo.setActiveAgentConfig(turnContext.runnableConfig());
         try {
-            return reactAgent.stream(buildStepPrompt(taskInfo, step), taskInfo.runnableConfig())
+            return reactAgent.stream(turnContext.prependTo(buildStepPrompt(taskInfo, step)), turnContext.runnableConfig())
                 .publishOn(Schedulers.boundedElastic())
                 .concatMap(output -> extractTextChunk(output, streamedText))
                 .doOnNext(text -> step.appendResult(text))
@@ -196,10 +208,12 @@ public class PlanAndExecuteExecutor implements ConversationExecutor {
                     }
                     log.warn("计划-执行：步骤执行失败，跳过继续。step={}, error={}", step.getTitle(), error.getMessage());
                 })
-                .onErrorResume(error -> Flux.empty());
+                .onErrorResume(error -> Flux.empty())
+                .doFinally(signal -> cleanupTurn(taskInfo, turnContext));
         }
         catch (GraphRunnerException exception) {
             log.warn("计划-执行：启动步骤执行失败。step={}, error={}", step.getTitle(), exception.getMessage());
+            cleanupTurn(taskInfo, turnContext);
             return Flux.empty();
         }
     }
@@ -211,8 +225,11 @@ public class PlanAndExecuteExecutor implements ConversationExecutor {
             ? null
             : traceRecorder.startStage(ConversationTraceStageCode.STEP_EXECUTE, mode().name(), "整体回答", null);
         AtomicBoolean streamedText = new AtomicBoolean(false);
+        AgentTurnContext turnContext = turnContextFactory.create(
+            taskInfo.conversationId(), taskInfo.exchangeId(), "fallback", taskInfo.runnableConfig());
+        taskInfo.setActiveAgentConfig(turnContext.runnableConfig());
         try {
-            return reactAgent.stream(fallbackPrompt, taskInfo.runnableConfig())
+            return reactAgent.stream(turnContext.prependTo(fallbackPrompt), turnContext.runnableConfig())
                 .publishOn(Schedulers.boundedElastic())
                 .concatMap(output -> extractTextChunk(output, streamedText))
                 .doOnComplete(() -> {
@@ -226,11 +243,24 @@ public class PlanAndExecuteExecutor implements ConversationExecutor {
                     }
                     log.warn("计划-执行：整体回答执行失败。error={}", error.getMessage());
                 })
-                .onErrorResume(error -> Flux.empty());
+                .onErrorResume(error -> Flux.empty())
+                .doFinally(signal -> cleanupTurn(taskInfo, turnContext));
         }
         catch (GraphRunnerException exception) {
             log.warn("计划-执行：启动整体回答执行失败。error={}", exception.getMessage());
+            cleanupTurn(taskInfo, turnContext);
             return Flux.empty();
+        }
+    }
+
+    private void cleanupTurn(TaskInfo taskInfo, AgentTurnContext turnContext) {
+        taskInfo.setActiveAgentConfig(null);
+        try {
+            checkpointManager.clearThread(turnContext.threadId());
+        }
+        catch (RuntimeException exception) {
+            log.warn("计划执行子线程检查点清理失败。threadId={}, error={}",
+                turnContext.threadId(), exception.getMessage());
         }
     }
 

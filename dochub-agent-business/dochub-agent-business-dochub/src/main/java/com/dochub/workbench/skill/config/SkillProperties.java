@@ -24,6 +24,15 @@ public class SkillProperties {
     /** 单个 SKILL.md 内容大小上限（字节） */
     private int maxSkillMdBytes = 64 * 1024;
 
-    /** 是否启用 LLM 精确选技能（优先）；关闭或 LLM 失败时回退标签关键词+bigram 打分 */
+    /** 是否允许在规则候选难以区分时调用 LLM 精确选技能 */
     private boolean llmRouterEnabled = true;
+
+    /** Rule matches below this score are treated as no match. */
+    private double minimumRuleScore = 0.45D;
+
+    /** A top rule score at or above this value may bypass the LLM. */
+    private double strongRuleThreshold = 0.82D;
+
+    /** Top candidates closer than this score are considered ambiguous. */
+    private double ambiguityGap = 0.10D;
 }

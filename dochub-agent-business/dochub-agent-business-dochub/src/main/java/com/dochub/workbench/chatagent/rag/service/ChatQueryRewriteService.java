@@ -101,19 +101,15 @@ public class ChatQueryRewriteService {
             log.info("RAG 改写模型参数: overrideEnabled=false, useDefaultModelOptions=true");
             return null;
         }
-        log.info("RAG 改写模型参数: overrideEnabled=true, temperature={}, topP={}, thinking={}",
+        log.info("RAG 改写模型参数: overrideEnabled=true, temperature={}, topP={}",
             rewriteOptions.getTemperature(),
-            rewriteOptions.getTopP(),
-            rewriteOptions.getThinking());
+            rewriteOptions.getTopP());
         OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder();
         if (rewriteOptions.getTemperature() != null) {
             builder.temperature(rewriteOptions.getTemperature());
         }
         if (rewriteOptions.getTopP() != null) {
             builder.topP(rewriteOptions.getTopP());
-        }
-        if (rewriteOptions.getThinking() != null) {
-            builder.extraBody(Map.of("thinking", rewriteOptions.getThinking()));
         }
         return builder.build();
     }

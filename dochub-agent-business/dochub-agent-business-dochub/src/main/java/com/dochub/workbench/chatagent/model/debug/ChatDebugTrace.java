@@ -89,6 +89,8 @@ public class ChatDebugTrace {
 
     private ChatLimitStats limitStats;
 
+    private ChatLatencyTrace latencyTrace;
+
     private String ragSystemPrompt;
 
     private String ragUserPrompt;

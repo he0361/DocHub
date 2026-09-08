@@ -56,10 +56,14 @@ public class QdrantVectorStore {
      * 文档向量集合专用初始化：建集合 + 给文本字段建全文索引（供关键字检索回退用）。
      */
     public void ensureDocumentCollection(int dimension) {
-        ensureCollection(documentCollection(), dimension);
-        createTextIndex(documentCollection(), "chunk_text");
-        createTextIndex(documentCollection(), "section_path");
-        createTextIndex(documentCollection(), "canonical_path");
+        ensureDocumentCollection(documentCollection(), dimension);
+    }
+
+    public void ensureDocumentCollection(String collection, int dimension) {
+        ensureCollection(collection, dimension);
+        createTextIndex(collection, "chunk_text");
+        createTextIndex(collection, "section_path");
+        createTextIndex(collection, "canonical_path");
     }
 
     private void createTextIndex(String collection, String field) {
@@ -173,6 +177,84 @@ public class QdrantVectorStore {
         }
     }
 
+    /** Delete deterministic point identifiers and wait until Qdrant acknowledges the mutation. */
+    public void deletePoints(String collection, List<Long> pointIds) {
+        if (pointIds == null || pointIds.isEmpty()) {
+            return;
+        }
+        restClient.post()
+            .uri("/collections/{name}/points/delete?wait=true", collection)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("points", pointIds))
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    /** Exact point count used by the pre-switch reconciliation. */
+    @SuppressWarnings("unchecked")
+    public long count(String collection) {
+        Map<String, Object> response = restClient.post()
+            .uri("/collections/{name}/points/count?exact=true", collection)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("exact", true))
+            .retrieve()
+            .body(Map.class);
+        Object result = response == null ? null : response.get("result");
+        Object value = result instanceof Map<?, ?> map ? map.get("count") : null;
+        if (!(value instanceof Number number)) {
+            throw new IllegalStateException("Qdrant 未返回集合点数量: " + collection);
+        }
+        return number.longValue();
+    }
+
+    /** Configured vector dimension used to reject a partial or incompatible target collection. */
+    @SuppressWarnings("unchecked")
+    public int collectionDimension(String collection) {
+        Map<String, Object> response = restClient.get()
+            .uri("/collections/{name}", collection)
+            .retrieve()
+            .body(Map.class);
+        Object result = response == null ? null : response.get("result");
+        Object config = result instanceof Map<?, ?> map ? map.get("config") : null;
+        Object params = config instanceof Map<?, ?> map ? map.get("params") : null;
+        Object vectors = params instanceof Map<?, ?> map ? map.get("vectors") : null;
+        Object size = vectors instanceof Map<?, ?> map ? map.get("size") : null;
+        if (!(size instanceof Number number) || number.intValue() <= 0) {
+            throw new IllegalStateException("Qdrant 未返回集合向量维度: " + collection);
+        }
+        return number.intValue();
+    }
+
+    /** Returns one real point, including its vector, for pre-switch search verification. */
+    @SuppressWarnings("unchecked")
+    public SamplePoint sample(String collection) {
+        Map<String, Object> response = restClient.post()
+            .uri("/collections/{name}/points/scroll", collection)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("limit", 1, "with_payload", true, "with_vector", true))
+            .retrieve()
+            .body(Map.class);
+        Object result = response == null ? null : response.get("result");
+        Object points = result instanceof Map<?, ?> map ? map.get("points") : null;
+        if (!(points instanceof List<?> list) || list.isEmpty() || !(list.get(0) instanceof Map<?, ?> point)) {
+            return null;
+        }
+        Object idValue = point.get("id");
+        Object vectorValue = point.get("vector");
+        if (idValue == null || !(vectorValue instanceof List<?> vectorList) || vectorList.isEmpty()) {
+            throw new IllegalStateException("Qdrant 样本点缺少 id 或 vector: " + collection);
+        }
+        float[] vector = new float[vectorList.size()];
+        for (int index = 0; index < vectorList.size(); index++) {
+            Object value = vectorList.get(index);
+            if (!(value instanceof Number number)) throw new IllegalStateException("Qdrant 样本向量格式无效: " + collection);
+            vector[index] = number.floatValue();
+        }
+        Object payload = point.get("payload");
+        Map<String, Object> payloadMap = payload instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+        return new SamplePoint(Long.parseLong(String.valueOf(idValue)), vector, payloadMap);
+    }
+
     public String documentCollection() {
         return properties.getDocumentCollection();
     }
@@ -185,5 +267,8 @@ public class QdrantVectorStore {
     }
 
     public record SearchHit(long id, double score, Map<String, Object> payload) {
+    }
+
+    public record SamplePoint(long id, float[] vector, Map<String, Object> payload) {
     }
 }

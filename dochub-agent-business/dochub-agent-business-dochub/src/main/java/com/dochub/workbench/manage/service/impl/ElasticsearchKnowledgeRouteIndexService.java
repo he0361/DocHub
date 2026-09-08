@@ -87,6 +87,18 @@ public class ElasticsearchKnowledgeRouteIndexService implements KnowledgeRouteIn
     }
 
     @Override
+    public void refreshNow() {
+        LAST_REFRESH_TIME.set(System.currentTimeMillis());
+        try {
+            refreshAll();
+        }
+        catch (Exception exception) {
+            LAST_REFRESH_TIME.set(0L);
+            throw new IllegalStateException("刷新知识路由索引失败", exception);
+        }
+    }
+
+    @Override
     public List<RouteLexicalHit> search(String routingText, String entityType, int size) {
         if (StrUtil.isBlank(routingText) || StrUtil.isBlank(entityType)) {
             return List.of();

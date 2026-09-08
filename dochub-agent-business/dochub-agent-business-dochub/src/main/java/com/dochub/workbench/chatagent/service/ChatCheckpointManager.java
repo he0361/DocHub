@@ -52,6 +52,25 @@ public class ChatCheckpointManager {
             new LambdaQueryWrapper<GraphThread>()
                 .eq(GraphThread::getThreadName, threadId)
         );
+        return clearThreads(threads);
+    }
+
+    /**
+     * Clears both the legacy conversation graph thread and all isolated per-exchange children.
+     */
+    @Transactional
+    public int clearConversation(String conversationId) {
+        List<GraphThread> threads = graphThreadMapper.selectList(
+            new LambdaQueryWrapper<GraphThread>()
+                .and(query -> query
+                    .eq(GraphThread::getThreadName, conversationId)
+                    .or()
+                    .likeRight(GraphThread::getThreadName, conversationId + ":exchange:"))
+        );
+        return clearThreads(threads);
+    }
+
+    private int clearThreads(List<GraphThread> threads) {
         if (threads == null || threads.isEmpty()) {
             return 0;
         }
@@ -74,7 +93,7 @@ public class ChatCheckpointManager {
         }
         graphThreadMapper.delete(
             new LambdaQueryWrapper<GraphThread>()
-                .eq(GraphThread::getThreadName, threadId)
+                .in(GraphThread::getThreadId, graphThreadIds)
         );
         return checkpointCount;
     }

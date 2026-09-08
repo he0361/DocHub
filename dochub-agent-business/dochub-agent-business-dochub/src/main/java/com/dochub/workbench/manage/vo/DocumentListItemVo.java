@@ -55,6 +55,10 @@ public class DocumentListItemVo {
 
     private String documentTags;
 
+    private String classificationStatus;
+
+    private Long classificationReviewId;
+
     private Long currentPlanId;
 
     private Long lastIndexTaskId;

@@ -541,7 +541,6 @@ public class DocumentQuestionRouter {
         return OpenAiChatOptions.builder()
             .temperature(0.0D)
             .topP(0.1D)
-            .extraBody(Map.of("thinking", false))
             .build();
     }
 

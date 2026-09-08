@@ -27,6 +27,7 @@ import com.dochub.workbench.manage.service.DocumentProfileService;
 import com.dochub.workbench.manage.service.DocumentStorageService;
 import com.dochub.workbench.manage.service.DocumentStrategyService;
 import com.dochub.workbench.manage.support.DocumentIndexBuildProgressService;
+import com.dochub.workbench.manage.support.DocumentClassificationIndexGuard;
 import com.dochub.workbench.manage.service.DocumentStructureGraphProjectionService;
 import com.dochub.workbench.manage.service.DocumentStructureNodeService;
 import com.dochub.workbench.manage.service.DocumentTaskLogService;
@@ -37,6 +38,7 @@ import com.dochub.workbench.manage.support.DocumentAnalysisResult;
 import com.dochub.workbench.manage.support.DocumentStrategyPlanDraft;
 import com.dochub.workbench.manage.support.DocumentStrategyStepDraft;
 import com.dochub.workbench.manage.support.ParentBlockCandidate;
+import com.dochub.workbench.modelconfig.support.VectorMutationCoordinator;
 import org.javaup.enums.BusinessStatus;
 import org.javaup.enums.DocumentChunkSourceTypeEnum;
 import org.javaup.enums.DocumentFileTypeEnum;
@@ -108,6 +110,8 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
     private final DocumentProfileService documentProfileService;
 
     private final DocumentIndexBuildProgressService indexBuildProgressService;
+
+    private final ObjectProvider<VectorMutationCoordinator> vectorMutationCoordinatorProvider;
 
     @Resource
     private UidGenerator uidGenerator;
@@ -291,6 +295,18 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
             return;
         }
 
+        // 消费端再次校验，阻止伪造或分类后状态变更的旧消息绕过入口闸门。
+        if (!DocumentClassificationIndexGuard.isConfirmed(document.getClassificationStatus())) {
+            task.setTaskStatus(DocumentTaskStatusEnum.FAILED.getCode());
+            task.setErrorCode(DocumentClassificationIndexGuard.failureCode(document.getClassificationStatus()));
+            task.setErrorMsg("知识域分类未确认，索引消息已拒绝。");
+            task.setFinishTime(new Date());
+            taskMapper.updateById(task);
+            log.warn("索引消费被知识分类闸门拒绝: documentId={}, taskId={}, classificationStatus={}",
+                documentId, taskId, document.getClassificationStatus());
+            return;
+        }
+
         Date startTime = new Date();
 
         List<DochubDocumentStrategyStep> stepList = listSteps(planId);
@@ -395,7 +411,20 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
                     "vectorStoreType", DocumentVectorStoreTypeEnum.QDRANT.getMsg(),
                     "parentCount", parentBlockEntityList.size()));
 
-            vectorGateway.vectorize(chunkEntityList);
+            VectorMutationCoordinator mutationCoordinator = vectorMutationCoordinatorProvider.getIfAvailable();
+            VectorMutationCoordinator.MutationPermit mutationPermit = mutationCoordinator == null
+                ? null : mutationCoordinator.beginMutation();
+            try {
+                vectorGateway.vectorize(chunkEntityList);
+                for (DochubDocumentChunk chunk : chunkEntityList) {
+                    chunkMapper.updateById(chunk);
+                }
+                if (mutationCoordinator != null) {
+                    mutationCoordinator.documentUpsert(mutationPermit, chunkEntityList);
+                }
+            } finally {
+                if (mutationPermit != null) mutationPermit.close();
+            }
 
             indexBuildProgressService.reportStage(documentId, taskId, DocumentTaskStageEnum.VECTORIZE, 88, "向量化完成");
 
@@ -426,10 +455,6 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
 
             indexBuildProgressService.reportStage(documentId, taskId, DocumentTaskStageEnum.KEYWORD_INDEX, 95,
                 "关键词索引完成");
-
-            for (DochubDocumentChunk chunk : chunkEntityList) {
-                chunkMapper.updateById(chunk);
-            }
 
             taskLogService.saveLog(taskId, documentId,
                 DocumentTaskStageEnum.VECTORIZE.getCode(),

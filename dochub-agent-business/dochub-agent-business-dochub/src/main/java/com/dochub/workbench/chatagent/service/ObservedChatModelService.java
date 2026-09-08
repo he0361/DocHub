@@ -3,6 +3,7 @@ package com.dochub.workbench.chatagent.service;
 import cn.hutool.core.util.StrUtil;
 import lombok.extern.slf4j.Slf4j;
 import com.dochub.workbench.chatagent.model.debug.ChatModelUsageTrace;
+import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
@@ -12,6 +13,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
@@ -34,9 +36,16 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 public class ObservedChatModelService {
 
     private final ChatModel chatModel;
+    private final ModelRuntimeRegistry modelRuntimeRegistry;
 
     public ObservedChatModelService(ChatModel chatModel) {
+        this(chatModel, null);
+    }
+
+    @Autowired
+    public ObservedChatModelService(ChatModel chatModel, ModelRuntimeRegistry modelRuntimeRegistry) {
         this.chatModel = chatModel;
+        this.modelRuntimeRegistry = modelRuntimeRegistry;
     }
 
     public String callText(String stageName,
@@ -54,6 +63,8 @@ public class ObservedChatModelService {
         long startTime = System.currentTimeMillis();
         String provider = resolveProvider();
         String model = resolveModel();
+        long configVersion = resolveConfigVersion();
+        recordModelRequest(traceRecorder, systemPrompt, userPrompt, configVersion);
         try {
             ChatOptions effectiveOptions = mergeOptions(callOptions);
             logStageCallOptions(stageName, provider, model, effectiveOptions);
@@ -83,6 +94,7 @@ public class ObservedChatModelService {
                 .durationMs(System.currentTimeMillis() - startTime)
                 .promptTokens(estimateTokens(systemPrompt) + estimateTokens(userPrompt))
                 .status("FAILED")
+                .modelConfigVersion(configVersion)
                 .build());
             throw exception;
         }
@@ -102,6 +114,8 @@ public class ObservedChatModelService {
                                    ConversationTraceRecorder traceRecorder) {
         String provider = resolveProvider();
         String model = resolveModel();
+        long configVersion = resolveConfigVersion();
+        recordModelRequest(traceRecorder, systemPrompt, userPrompt, configVersion);
         long startTime = System.currentTimeMillis();
         AtomicReference<ChatResponseMetadata> metadataRef = new AtomicReference<>();
         AtomicLong durationRef = new AtomicLong(0L);
@@ -119,6 +133,7 @@ public class ObservedChatModelService {
             })
             .filter(StrUtil::isNotBlank)
             .doOnNext(outputBuilder::append)
+            .doOnNext(chunk -> onTextChunk(traceRecorder, chunk))
             .doOnComplete(() -> {
                 long durationMs = System.currentTimeMillis() - startTime;
                 durationRef.set(durationMs);
@@ -134,6 +149,7 @@ public class ObservedChatModelService {
                 .estimatedCost(estimateCost(model, estimateTokens(systemPrompt) + estimateTokens(userPrompt), estimateTokens(outputBuilder.toString())))
                 .durationMs(durationRef.get() > 0 ? durationRef.get() : System.currentTimeMillis() - startTime)
                 .status("FAILED")
+                .modelConfigVersion(configVersion)
                 .build()));
     }
 
@@ -250,7 +266,35 @@ public class ObservedChatModelService {
             .estimatedCost(estimateCost(model, promptTokens, completionTokens))
             .durationMs(durationMs)
             .status(status)
+            .modelConfigVersion(resolveConfigVersion())
             .build();
+    }
+
+    private void recordModelRequest(ConversationTraceRecorder recorder,
+                                    String systemPrompt,
+                                    String userPrompt,
+                                    long configVersion) {
+        if (recorder != null) {
+            recorder.recordModelRequest(StrUtil.length(systemPrompt) + StrUtil.length(userPrompt), configVersion);
+        }
+    }
+
+    private void onTextChunk(ConversationTraceRecorder recorder, String chunk) {
+        if (recorder != null) {
+            recorder.onTextChunk(chunk);
+        }
+    }
+
+    private long resolveConfigVersion() {
+        if (modelRuntimeRegistry == null) {
+            return 0L;
+        }
+        try {
+            return modelRuntimeRegistry.requireChat().version();
+        }
+        catch (IllegalStateException ignored) {
+            return 0L;
+        }
     }
 
     private Integer estimateTokens(String content) {

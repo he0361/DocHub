@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.dochub.workbench.chatagent.config.ChatAgentProperties;
 import com.dochub.workbench.chatagent.model.ConversationExchangeView;
+import com.dochub.workbench.chatagent.rag.model.ExecutionMode;
 import com.dochub.workbench.prompt.PromptTemplateNames;
 import com.dochub.workbench.prompt.PromptTemplateService;
 import org.slf4j.Logger;
@@ -53,8 +54,18 @@ public class RecommendationService {
                                                 String answer,
                                                 List<ConversationExchangeView> recentExchanges,
                                                 ConversationTraceRecorder traceRecorder) {
+        return generateRecommendations(question, answer, recentExchanges, null, traceRecorder);
+    }
 
-        if (!properties.isRecommendationEnabled() || StrUtil.isBlank(answer)) {
+    public List<String> generateRecommendations(String question,
+                                                String answer,
+                                                List<ConversationExchangeView> recentExchanges,
+                                                ExecutionMode executionMode,
+                                                ConversationTraceRecorder traceRecorder) {
+
+        if (executionMode == ExecutionMode.DIRECT_CHAT
+            || !properties.isRecommendationEnabled()
+            || StrUtil.isBlank(answer)) {
             return List.of();
         }
 

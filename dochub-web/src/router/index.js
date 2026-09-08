@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { isAdminAuthenticated } from '../utils/adminAuth'
+import { canManageModelConfig, isAdminAuthenticated } from '../utils/adminAuth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -118,6 +118,15 @@ const router = createRouter({
           }
         },
         {
+          path: 'model-config',
+          name: 'AdminModelConfig',
+          component: () => import('../views/admin/AdminModelConfigView.vue'),
+          meta: {
+            title: '模型配置',
+            requiresAdminProfile: true
+          }
+        },
+        {
           path: 'observability/:conversationId',
           name: 'AdminObservabilitySession',
           component: () => import('../views/admin/AdminObservabilitySessionView.vue'),
@@ -149,6 +158,11 @@ router.beforeEach((to) => {
         redirect: to.fullPath
       }
     }
+  }
+
+  const requiresAdminProfile = to.matched.some((record) => record.meta?.requiresAdminProfile)
+  if (requiresAdminProfile && !canManageModelConfig()) {
+    return { name: 'AdminDashboard' }
   }
 
   if (isLoginRoute && isAdminAuthenticated()) {

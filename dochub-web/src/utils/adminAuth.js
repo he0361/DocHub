@@ -105,6 +105,11 @@ export function isAdminProfile() {
   return Boolean(getAdminProfile()?.isAdmin)
 }
 
+/** 模型运行时配置不授予给仅拥有单项后台权限的操作员。 */
+export function canManageModelConfig() {
+  return isAdminProfile()
+}
+
 /**
  * 判断当前账号是否拥有某权限（管理员恒有全部权限）。
  */

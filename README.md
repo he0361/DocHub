@@ -54,6 +54,10 @@ DocHub（文枢）是面向**涉密 / 敏感办公环境**自研的企业级 AI 
 
 后端通过 **OpenAI 兼容协议**接入对话与向量模型（如阿里云百炼 DashScope 等合规服务），对话模型与向量模型可独立配置、随时替换，便于在内网环境下对接经过评估的模型网关。
 
+管理员可在“模型配置”页更新对话模型；对话模型经过后端连接测试后立即热更新。向量模型同样支持远程或本地 OpenAI 兼容接口，但修改必须再次输入管理员密码并完整确认“我确认更改向量模型”：同名模型仅在维度验证通过后热切换，模型名变化会创建版本化集合并在后台重建、校验、原子切换。重建期间旧模型与旧集合继续服务；失败可重试或回滚到保留版本。
+
+生产部署必须设置 `DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY`（Base64 编码的 32 字节密钥）。模型 API Key 只会加密存储，查询接口不会回显。可使用 `scripts/verify-embedding-migration.ps1` 做无副作用的候选连接/维度验证；仅在明确传入 `-StartMigration` 及所需环境变量后才会实际启动迁移，脚本不会输出密码或 API Key。
+
 ### 前后端
 
 - **前端** `dochub-web`：Vue 3 + Vite，开发端口 `5173`，通过 `/api` 代理到后端 `9086`；
@@ -100,9 +104,42 @@ docker compose -f docker-compose-dochub.yml up -d
 
 ### 3. 配置模型服务
 
-编辑 `dochub-agent-business/dochub-agent-business-dochub/src/main/resources/application.yaml`，配置 OpenAI 兼容的模型地址与密钥。
+模型地址在 `dochub-agent-business/dochub-agent-business-dochub/src/main/resources/application.yaml` 中配置；密钥必须由部署环境提供。开发环境可不设置远程模型密钥，待管理员保存首个数据库运行时配置前会继续使用 YAML 地址作为回退。
 
-> ⚠️ 生产环境请通过环境变量注入密钥，**不要**将真实密钥提交到代码仓库。
+```powershell
+# 远程 DashScope/OpenAI-compatible chat model
+$env:ALI_BAI_LIAN_API_KEY = '<provider-issued-key>'
+# Optional: use a separate embedding credential; otherwise it falls back to the chat credential.
+$env:ALI_BAI_LIAN_EMBEDDING_API_KEY = '<provider-issued-embedding-key>'
+$env:TAVILY_API_KEY = '<provider-issued-key>'
+# Required when running with the prod or production Spring profile. Use an independently managed Base64 32-byte AES key.
+$env:DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY = '<base64-encoded-32-byte-key>'
+```
+
+> ⚠️ 历史提交中曾暴露的凭证必须立即在对应服务商处轮换；从仓库中删除明文并不能使旧凭证失效。不要将新凭证提交到代码仓库。
+
+本地模型的 Base URL 从后端进程（或后端容器）解析，而不是从浏览器解析。若后端运行在容器内，`http://127.0.0.1:11434/v1` 指向该容器本身；请改用宿主机网关或同一 Docker 网络中可达的服务地址。
+
+可在已启动后端、持有管理员 Bearer token 且已提供上述环境变量后，手动运行以下非持久化连接检查（脚本不会保存配置，也不会输出凭证）：
+
+```powershell
+$env:DOCHUB_ADMIN_BEARER_TOKEN = '<administrator-bearer-token>'
+powershell -ExecutionPolicy Bypass -File scripts/verify-model-runtime.ps1 -BaseUrl http://127.0.0.1:8090
+```
+
+### 开放问答响应模式与延迟检查
+
+开放式问答默认使用“快速回答”：规则路由后直接发起一次流式模型请求，不启动 ReAct、搜索工具或计划器。只有问题明确要求联网/搜索或涉及实时信息时才自动进入 ReAct；“计划执行”由用户显式选择。DashScope 请求固定关闭 `enable_thinking`，Ollama 请求固定关闭 `think`，通用 OpenAI 兼容服务不会收到平台私有字段。
+
+长会话只注入已有摘要和有限的最近问答；ReAct 与计划执行使用每一轮独立的 Graph 子线程，结束后清理检查点，避免历史消息和工具结果无限增长。
+
+后端和模型服务启动后，可用下列脚本连续采样普通开放问题。脚本会检查每个样本都是 `DIRECT_CHAT`、恰好一次模型调用、零工具调用，并以首个 `text` SSE 事件计算 TTFT；默认要求 p95 不超过 5 秒。实际结果仍受本地模型冷启动、网络和服务商排队影响，请连同运行环境记录结果，不要静默放宽阈值。
+
+```powershell
+$env:DOCHUB_CHAT_BEARER_TOKEN = '<user-or-admin-bearer-token>' # 若接口开启鉴权
+powershell -ExecutionPolicy Bypass -File scripts/verify-open-chat-latency.ps1 `
+  -BaseUrl http://127.0.0.1:9086 -Samples 20 -P95CeilingMs 5000
+```
 
 ### 4. 启动后端
 

@@ -6,15 +6,17 @@ import com.dochub.workbench.manage.data.DochubDocumentChunk;
 import com.dochub.workbench.manage.service.DocumentVectorGateway;
 import com.dochub.workbench.manage.support.DocumentIndexBuildProgressService;
 import com.dochub.workbench.manage.support.QdrantVectorStore;
+import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
+import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
+import com.dochub.workbench.modelconfig.support.VectorMutationCoordinator;
 import lombok.extern.slf4j.Slf4j;
 import org.javaup.enums.DocumentManageCode;
 import org.javaup.enums.DocumentVectorStatusEnum;
 import org.javaup.enums.DocumentVectorStoreTypeEnum;
 import org.javaup.exception.DochubFrameException;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -32,17 +34,17 @@ public class DefaultDocumentVectorGateway implements DocumentVectorGateway {
     public static final int EMBEDDING_BATCH_SIZE_LIMIT = 10;
 
     private final QdrantVectorStore vectorStore;
-    private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
+    private final ModelRuntimeRegistry modelRuntimeRegistry;
     private final DocumentIndexBuildProgressService indexBuildProgressService;
 
-    @Value("${spring.ai.openai.embedding.options.model:}")
-    private String embeddingModelName;
+    @Autowired(required = false)
+    private ObjectProvider<VectorMutationCoordinator> mutationCoordinatorProvider;
 
     public DefaultDocumentVectorGateway(QdrantVectorStore vectorStore,
-                                        ObjectProvider<EmbeddingModel> embeddingModelProvider,
+                                        ModelRuntimeRegistry modelRuntimeRegistry,
                                         DocumentIndexBuildProgressService indexBuildProgressService) {
         this.vectorStore = vectorStore;
-        this.embeddingModelProvider = embeddingModelProvider;
+        this.modelRuntimeRegistry = modelRuntimeRegistry;
         this.indexBuildProgressService = indexBuildProgressService;
     }
 
@@ -51,14 +53,17 @@ public class DefaultDocumentVectorGateway implements DocumentVectorGateway {
         if (CollUtil.isEmpty(chunkList)) {
             return;
         }
-        EmbeddingModel embeddingModel = requireEmbeddingModel();
+        VectorMutationCoordinator coordinator = coordinator().orElse(null);
+        VectorMutationCoordinator.MutationPermit permit = coordinator == null ? null : coordinator.beginMutation();
+        try {
+        EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
         List<DochubDocumentChunk> validChunkList = chunkList.stream()
             .filter(chunk -> chunk != null && StrUtil.isNotBlank(chunk.getChunkText()))
             .toList();
         if (validChunkList.isEmpty()) {
             return;
         }
-        String currentEmbeddingModelName = resolveEmbeddingModelName();
+        String currentEmbeddingModelName = runtime.spec().modelName();
         int batchSize = EMBEDDING_BATCH_SIZE_LIMIT;
         int totalBatchCount = (validChunkList.size() + batchSize - 1) / batchSize;
         Long documentId = validChunkList.get(0).getDocumentId();
@@ -74,14 +79,14 @@ public class DefaultDocumentVectorGateway implements DocumentVectorGateway {
                 currentBatchIndex, totalBatchCount, currentBatch.size());
             indexBuildProgressService.reportVectorizeBatch(documentId, taskId, currentBatchIndex, totalBatchCount);
 
-            List<float[]> embeddingList = embeddingModel.embed(currentBatch.stream()
+            List<float[]> embeddingList = runtime.model().embed(currentBatch.stream()
                 .map(DochubDocumentChunk::getChunkText)
                 .toList());
             if (embeddingList.size() != currentBatch.size()) {
                 throw new IllegalStateException("EmbeddingModel 返回的向量数量与 chunk 数量不一致。");
             }
             // 首次写入前建好文档集合 + 文本字段全文索引（幂等）
-            vectorStore.ensureDocumentCollection(embeddingList.get(0).length);
+            vectorStore.ensureDocumentCollection(runtime.documentCollection(), embeddingList.get(0).length);
 
             List<QdrantVectorStore.Point> points = new ArrayList<>();
             for (int index = 0; index < currentBatch.size(); index++) {
@@ -89,10 +94,14 @@ public class DefaultDocumentVectorGateway implements DocumentVectorGateway {
                 points.add(new QdrantVectorStore.Point(chunk.getId(), embeddingList.get(index),
                     buildPayload(chunk, currentEmbeddingModelName)));
             }
-            vectorStore.upsert(vectorStore.documentCollection(), points);
+            vectorStore.upsert(runtime.documentCollection(), points);
             markSuccess(currentBatch);
         }
         log.info("文档向量化(Qdrant)完成，chunkCount={}", validChunkList.size());
+        }
+        finally {
+            if (permit != null) permit.close();
+        }
     }
 
     @Override
@@ -101,9 +110,18 @@ public class DefaultDocumentVectorGateway implements DocumentVectorGateway {
             return;
         }
         try {
+            VectorMutationCoordinator coordinator = coordinator().orElse(null);
+            VectorMutationCoordinator.MutationPermit permit = coordinator == null ? null : coordinator.beginMutation();
+            try {
             Map<String, Object> filter = Map.of("must", List.of(Map.of(
                 "key", "document_id", "match", Map.of("value", documentId))));
-            vectorStore.deleteByFilter(vectorStore.documentCollection(), filter);
+            EmbeddingRuntimeSnapshot runtime = modelRuntimeRegistry.captureEmbedding();
+            vectorStore.deleteByFilter(runtime.documentCollection(), filter);
+            if (coordinator != null) coordinator.documentDelete(permit, documentId);
+            }
+            finally {
+                if (permit != null) permit.close();
+            }
         }
         catch (Exception exception) {
             throw new DochubFrameException(DocumentManageCode.DOCUMENT_VECTOR_FAILED.getCode(),
@@ -143,19 +161,12 @@ public class DefaultDocumentVectorGateway implements DocumentVectorGateway {
         }
     }
 
-    private EmbeddingModel requireEmbeddingModel() {
-        EmbeddingModel embeddingModel = embeddingModelProvider.getIfAvailable();
-        if (embeddingModel == null) {
-            throw new IllegalStateException("当前未找到可用的 EmbeddingModel，无法执行向量化。");
-        }
-        return embeddingModel;
-    }
-
-    private String resolveEmbeddingModelName() {
-        return StrUtil.isNotBlank(embeddingModelName) ? embeddingModelName : "default";
-    }
-
     private int defaultInteger(Integer value) {
         return Objects.requireNonNullElse(value, 0);
+    }
+
+    private java.util.Optional<VectorMutationCoordinator> coordinator() {
+        return mutationCoordinatorProvider == null ? java.util.Optional.empty()
+            : java.util.Optional.ofNullable(mutationCoordinatorProvider.getIfAvailable());
     }
 }

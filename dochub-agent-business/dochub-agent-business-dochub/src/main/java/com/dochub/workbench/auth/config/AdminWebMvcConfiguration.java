@@ -32,6 +32,7 @@ public class AdminWebMvcConfiguration implements WebMvcConfigurer {
                 "/manage/document/**",       // 文档接入
                 "/manage/knowledge/**",      // 知识路由 / 路由追踪
                 "/admin/user/**",            // 账号管理
+                "/admin/model-config/**",    // 运行时模型配置
                 "/admin/auth/me");           // 当前账号信息
 
         registry.addInterceptor(previewModeInterceptor)

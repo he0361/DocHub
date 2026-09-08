@@ -2,11 +2,17 @@ package com.dochub.workbench.manage.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
+import com.dochub.workbench.auth.support.AdminRequestContext;
+import com.dochub.workbench.modelconfig.support.AdminGuard;
 import com.dochub.workbench.manage.dto.DocumentProfileBatchRegenerateDto;
 import com.dochub.workbench.manage.dto.DocumentProfileDetailQueryDto;
 import com.dochub.workbench.manage.dto.DocumentProfileRegenerateDto;
 import com.dochub.workbench.manage.dto.KnowledgeRouteTraceQueryDto;
+import com.dochub.workbench.manage.dto.KnowledgeClassificationReviewQueryDto;
+import com.dochub.workbench.manage.dto.KnowledgeClassificationResolveDto;
 import com.dochub.workbench.manage.dto.KnowledgeScopeDeleteDto;
+import com.dochub.workbench.manage.dto.KnowledgeScopeMergeDto;
 import com.dochub.workbench.manage.dto.KnowledgeScopeSaveDto;
 import com.dochub.workbench.manage.dto.KnowledgeTopicDeleteDto;
 import com.dochub.workbench.manage.dto.KnowledgeTopicQueryDto;
@@ -15,9 +21,13 @@ import com.dochub.workbench.manage.dto.TopicDocumentRelationListQueryDto;
 import com.dochub.workbench.manage.dto.TopicDocumentRelationRemoveDto;
 import com.dochub.workbench.manage.dto.TopicDocumentRelationSaveDto;
 import com.dochub.workbench.manage.service.KnowledgeManageService;
+import com.dochub.workbench.manage.service.KnowledgeScopeMergeService;
+import com.dochub.workbench.manage.service.KnowledgeClassificationReviewService;
 import com.dochub.workbench.manage.vo.DocumentProfileVo;
 import com.dochub.workbench.manage.vo.KnowledgeRouteTracePageVo;
+import com.dochub.workbench.manage.vo.KnowledgeClassificationReviewVo;
 import com.dochub.workbench.manage.vo.KnowledgeScopeItemVo;
+import com.dochub.workbench.manage.vo.KnowledgeScopeMergeVo;
 import com.dochub.workbench.manage.vo.KnowledgeTopicItemVo;
 import com.dochub.workbench.manage.vo.TopicDocumentRelationItemVo;
 import org.javaup.common.ApiResponse;
@@ -38,9 +48,18 @@ import java.util.List;
 public class KnowledgeManageController {
 
     private final KnowledgeManageService knowledgeManageService;
+    private final KnowledgeClassificationReviewService classificationReviewService;
+    private final AdminGuard adminGuard;
+    private final KnowledgeScopeMergeService scopeMergeService;
 
-    public KnowledgeManageController(KnowledgeManageService knowledgeManageService) {
+    public KnowledgeManageController(KnowledgeManageService knowledgeManageService,
+                                     KnowledgeClassificationReviewService classificationReviewService,
+                                     AdminGuard adminGuard,
+                                     KnowledgeScopeMergeService scopeMergeService) {
         this.knowledgeManageService = knowledgeManageService;
+        this.classificationReviewService = classificationReviewService;
+        this.adminGuard = adminGuard;
+        this.scopeMergeService = scopeMergeService;
     }
 
     @Operation(summary = "保存知识范围节点")
@@ -59,6 +78,13 @@ public class KnowledgeManageController {
     @PostMapping("/scope/list")
     public ApiResponse<List<KnowledgeScopeItemVo>> listScopes() {
         return ApiResponse.ok(knowledgeManageService.listScopes());
+    }
+
+    @Operation(summary = "合并重复知识域")
+    @PostMapping("/scope/merge")
+    public ApiResponse<KnowledgeScopeMergeVo> mergeScope(HttpServletRequest request,
+                                                          @Valid @RequestBody KnowledgeScopeMergeDto dto) {
+        return ApiResponse.ok(scopeMergeService.merge(requireAdmin(request), dto));
     }
 
     @Operation(summary = "保存知识主题节点")
@@ -119,5 +145,35 @@ public class KnowledgeManageController {
     @PostMapping("/route/trace/page/query")
     public ApiResponse<KnowledgeRouteTracePageVo> queryRouteTracePage(@RequestBody(required = false) KnowledgeRouteTraceQueryDto dto) {
         return ApiResponse.ok(knowledgeManageService.queryRouteTracePage(dto == null ? new KnowledgeRouteTraceQueryDto() : dto));
+    }
+
+    @Operation(summary = "查询知识分类待审核列表")
+    @PostMapping("/classification/review/list")
+    public ApiResponse<List<KnowledgeClassificationReviewVo>> listClassificationReviews(HttpServletRequest request,
+                                                                                         @RequestBody(required = false) KnowledgeClassificationReviewQueryDto dto) {
+        requireAdmin(request);
+        return ApiResponse.ok(classificationReviewService.list(dto));
+    }
+
+    @Operation(summary = "查询知识分类审核详情")
+    @PostMapping("/classification/review/detail")
+    public ApiResponse<KnowledgeClassificationReviewVo> classificationReviewDetail(HttpServletRequest request,
+                                                                                     @RequestBody KnowledgeClassificationReviewQueryDto dto) {
+        requireAdmin(request);
+        return ApiResponse.ok(classificationReviewService.detail(dto));
+    }
+
+    @Operation(summary = "确认知识分类")
+    @PostMapping("/classification/review/resolve")
+    public ApiResponse<KnowledgeClassificationReviewVo> resolveClassificationReview(HttpServletRequest request,
+                                                                                     @Valid @RequestBody KnowledgeClassificationResolveDto dto) {
+        String operator = requireAdmin(request);
+        return ApiResponse.ok(classificationReviewService.resolve(operator, dto));
+    }
+
+    private String requireAdmin(HttpServletRequest request) {
+        String username = AdminRequestContext.resolveUsername(request);
+        adminGuard.require(username);
+        return username;
     }
 }

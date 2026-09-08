@@ -171,6 +171,15 @@
               <span class="open-chat-mode-label">回答方式</span>
               <button
                 class="mode-button mode-button-mini"
+                :class="{ active: openChatMode === OPEN_CHAT_MODES.DIRECT_CHAT }"
+                type="button"
+                :disabled="isStreaming"
+                @click="openChatMode = OPEN_CHAT_MODES.DIRECT_CHAT"
+              >
+                快速回答
+              </button>
+              <button
+                class="mode-button mode-button-mini"
                 :class="{ active: openChatMode === OPEN_CHAT_MODES.REACT_AGENT }"
                 type="button"
                 :disabled="isStreaming"
@@ -290,6 +299,7 @@ import Chat from '../components/Chat.vue'
 import { APIError, chatApi, createConversationId, manageApi, skillApi } from '../api/api'
 import { hasCode } from '../utils/manageFormat'
 import { buildChatRouteExplain, buildRouteTraceLookup } from '../utils/knowledgeRoute'
+import { DEFAULT_OPEN_CHAT_MODE, OPEN_CHAT_MODES } from '../utils/openChatMode'
 
 const router = useRouter()
 const adminConsoleHref = router.resolve({
@@ -321,12 +331,8 @@ const CHAT_MODES = Object.freeze({
   AUTO_DOCUMENT: 'AUTO_DOCUMENT',
   OPEN_CHAT: 'OPEN_CHAT'
 })
-// 开放式提问的回答方式：ReAct 自主执行 / 计划-执行
-const OPEN_CHAT_MODES = Object.freeze({
-  REACT_AGENT: 'REACT_AGENT',
-  PLAN_AND_EXECUTE: 'PLAN_AND_EXECUTE'
-})
-const openChatMode = ref(OPEN_CHAT_MODES.REACT_AGENT)
+// 默认快速回答只发起一次流式模型请求；联网或复杂多步任务由用户显式选择。
+const openChatMode = ref(DEFAULT_OPEN_CHAT_MODE)
 const forcedSkillName = ref('')
 const showSkillPicker = ref(false)
 const availableSkills = ref([])

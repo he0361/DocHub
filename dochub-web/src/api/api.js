@@ -465,6 +465,50 @@ export const adminUserApi = {
   }
 }
 
+/** 运行期对话模型配置（仅真正的管理员可用）。 */
+export const modelConfigApi = {
+  query() {
+    return requestApiEnvelope('/admin/model-config/query', {
+      method: 'POST',
+      body: {}
+    })
+  },
+
+  testChat(payload) {
+    return requestApiEnvelope('/admin/model-config/chat/test', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  saveChat(payload) {
+    return requestApiEnvelope('/admin/model-config/chat/save', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  queryEmbedding() {
+    return requestApiEnvelope('/admin/model-config/embedding/query', { method: 'POST', body: {} })
+  },
+
+  testEmbedding(payload) {
+    return requestApiEnvelope('/admin/model-config/embedding/test', { method: 'POST', body: stringifyManageValue(payload) })
+  },
+
+  changeEmbedding(payload) {
+    return requestApiEnvelope('/admin/model-config/embedding/change', { method: 'POST', body: stringifyManageValue(payload) })
+  },
+
+  retryEmbeddingMigration(payload) {
+    return requestApiEnvelope('/admin/model-config/embedding/migration/retry', { method: 'POST', body: stringifyManageValue(payload) })
+  },
+
+  rollbackEmbedding(payload) {
+    return requestApiEnvelope('/admin/model-config/embedding/rollback', { method: 'POST', body: stringifyManageValue(payload) })
+  }
+}
+
 export const manageApi = {
   uploadDocument({ file, documentName, operatorId, knowledgeScopeCode, knowledgeScopeName, businessCategory, documentTags }) {
     const formData = new FormData()
@@ -643,6 +687,34 @@ export const manageApi = {
 
   queryKnowledgeRouteTracePage(payload = {}) {
     return requestApiEnvelope('/manage/knowledge/route/trace/page/query', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  listKnowledgeClassificationReviews(payload = {}) {
+    return requestApiEnvelope('/manage/knowledge/classification/review/list', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  getKnowledgeClassificationReview(payload) {
+    return requestApiEnvelope('/manage/knowledge/classification/review/detail', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  resolveKnowledgeClassificationReview(payload) {
+    return requestApiEnvelope('/manage/knowledge/classification/review/resolve', {
+      method: 'POST',
+      body: stringifyManageValue(payload)
+    })
+  },
+
+  mergeKnowledgeScope(payload) {
+    return requestApiEnvelope('/manage/knowledge/scope/merge', {
       method: 'POST',
       body: stringifyManageValue(payload)
     })

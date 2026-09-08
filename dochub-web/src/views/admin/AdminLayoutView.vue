@@ -82,11 +82,12 @@ import {
   HomeModernIcon,
   ShareIcon,
   EyeIcon,
+  CpuChipIcon,
   UserGroupIcon
 } from '@heroicons/vue/24/outline'
 import IcpFooter from '../../components/IcpFooter.vue'
 import { adminAuthApi } from '../../api/api'
-import { clearAdminAuth, getAdminUsername, hasPermission } from '../../utils/adminAuth'
+import { canManageModelConfig, clearAdminAuth, getAdminUsername, hasPermission } from '../../utils/adminAuth'
 
 const route = useRoute()
 const router = useRouter()
@@ -98,11 +99,14 @@ const navItems = [
   { to: '/admin/knowledge-route', label: '知识路由', icon: ShareIcon, permission: 'knowledge_route' },
   { to: '/admin/knowledge-route/traces', label: '路由追踪', icon: EyeIcon, permission: 'route_trace' },
   { to: '/admin/observability', label: '对话观测', icon: CommandLineIcon, permission: 'observability' },
-  { to: '/admin/accounts', label: '账号管理', icon: UserGroupIcon, permission: 'account_manage' }
+  { to: '/admin/accounts', label: '账号管理', icon: UserGroupIcon, permission: 'account_manage' },
+  { to: '/admin/model-config', label: '模型配置', icon: CpuChipIcon, isAdminOnly: true }
 ]
 
 // 全部按权限过滤：管理员 isAdmin 恒有全部权限；普通账号只显被授权且已启用的菜单
-const visibleNavItems = computed(() => navItems.filter((item) => hasPermission(item.permission)))
+const visibleNavItems = computed(() => navItems.filter((item) => (
+  item.isAdminOnly ? canManageModelConfig() : hasPermission(item.permission)
+)))
 
 const pageTitle = computed(() => route.meta?.title || '管理后台')
 const username = computed(() => getAdminUsername())

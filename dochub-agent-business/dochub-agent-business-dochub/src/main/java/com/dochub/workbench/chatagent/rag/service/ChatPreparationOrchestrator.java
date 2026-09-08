@@ -11,6 +11,7 @@ import com.dochub.workbench.chatagent.rag.model.AnswerHistoryContext;
 import com.dochub.workbench.chatagent.rag.model.ConversationExecutionPlan;
 import com.dochub.workbench.chatagent.rag.model.DocumentNavigationDecision;
 import com.dochub.workbench.chatagent.rag.model.ExecutionMode;
+import com.dochub.workbench.chatagent.rag.model.OpenChatRouteDecision;
 import com.dochub.workbench.chatagent.rag.model.HistoryPlanningContext;
 import com.dochub.workbench.chatagent.rag.model.RagRewriteResult;
 import com.dochub.workbench.chatagent.service.ConversationMemoryService;
@@ -69,6 +70,7 @@ public class ChatPreparationOrchestrator {
     private final DocumentQuestionRouter documentQuestionRouter;
     private final KnowledgeRouteService knowledgeRouteService;
     private final DocumentKnowledgeService documentKnowledgeService;
+    private final OpenChatExecutionRouter openChatExecutionRouter;
 
     public ChatPreparationOrchestrator(ChatRagProperties properties,
                                        ChatAgentProperties chatAgentProperties,
@@ -77,7 +79,8 @@ public class ChatPreparationOrchestrator {
                                        ChatQueryRewriteService chatQueryRewriteService,
                                        DocumentQuestionRouter documentQuestionRouter,
                                        KnowledgeRouteService knowledgeRouteService,
-                                       DocumentKnowledgeService documentKnowledgeService) {
+                                       DocumentKnowledgeService documentKnowledgeService,
+                                       OpenChatExecutionRouter openChatExecutionRouter) {
         this.properties = properties;
         this.chatAgentProperties = chatAgentProperties;
         this.conversationMemoryService = conversationMemoryService;
@@ -86,6 +89,7 @@ public class ChatPreparationOrchestrator {
         this.documentQuestionRouter = documentQuestionRouter;
         this.knowledgeRouteService = knowledgeRouteService;
         this.documentKnowledgeService = documentKnowledgeService;
+        this.openChatExecutionRouter = openChatExecutionRouter;
     }
 
     public ConversationExecutionPlan prepare(TaskInfo taskInfo) {
@@ -98,6 +102,39 @@ public class ChatPreparationOrchestrator {
         LocalDate currentDate = taskInfo.currentDate();
         String currentDateText = taskInfo.currentDateText();
         ConversationTraceRecorder traceRecorder = taskInfo.traceRecorder();
+
+        if (chatMode == null) {
+            throw new IllegalArgumentException("chatMode 不能为空");
+        }
+        if (chatMode == ChatQueryMode.OPEN_CHAT) {
+            String requestedMode = requestedOpenChatMode(taskInfo);
+            OpenChatRouteDecision route = openChatExecutionRouter.route(question, requestedMode);
+            if (route.mode() == ExecutionMode.PLAN_AND_EXECUTE && !chatAgentProperties.isPlanExecuteEnabled()) {
+                route = new OpenChatRouteDecision(ExecutionMode.DIRECT_CHAT, "PLAN_DISABLED_DIRECT_FALLBACK");
+            }
+            ConversationExecutionPlan plan = ConversationExecutionPlan.builder()
+                .mode(route.mode())
+                .routeReason(route.reasonCode())
+                .chatMode(chatMode)
+                .originalQuestion(question)
+                .agentQuestion(question)
+                .rewriteQuestion(question)
+                .rewriteSubQuestions(List.of(question))
+                .retrievalQuestion(question)
+                .retrievalSubQuestions(List.of(question))
+                .currentDate(currentDate)
+                .currentDateText(currentDateText)
+                .requiresCurrentDateAnchoring(TimeSensitiveQueryHelper.requiresCurrentDateAnchoring(question))
+                .requiresFreshSearch(route.mode() == ExecutionMode.REACT_AGENT)
+                .build();
+            if (traceRecorder != null) {
+                ConversationTraceRecorder.StageHandle routeStage = traceRecorder.startStage(
+                    ConversationTraceStageCode.ROUTE, route.mode().name(), "正在执行开放式问答规则路由。", null);
+                traceRecorder.completeStage(routeStage, "开放式问答规则路由完成。", Map.of(
+                    "executionMode", route.mode().name(), "reasonCode", route.reasonCode()));
+            }
+            return plan;
+        }
 
         ConversationTraceRecorder.StageHandle memoryStage = traceRecorder == null
             ? null
@@ -133,28 +170,6 @@ public class ChatPreparationOrchestrator {
 
         boolean requiresCurrentDateAnchoring = TimeSensitiveQueryHelper.requiresCurrentDateAnchoring(question);
         boolean requiresFreshSearch = TimeSensitiveQueryHelper.requiresFreshSearch(question);
-        if (chatMode == null) {
-            throw new IllegalArgumentException("chatMode 不能为空");
-        }
-
-        if (chatMode == ChatQueryMode.OPEN_CHAT) {
-            ExecutionMode openChatMode = resolveOpenChatExecutionMode(taskInfo);
-            ConversationExecutionPlan plan = basePlan(question, chatMode, memoryContext, historyPlanningContext, historySummary, answerHistoryContext, currentDate, currentDateText,
-                requiresCurrentDateAnchoring, requiresFreshSearch)
-                .mode(openChatMode)
-                .build();
-            if (traceRecorder != null) {
-                ConversationTraceRecorder.StageHandle routeStage = traceRecorder.startStage(ConversationTraceStageCode.ROUTE, openChatMode.name(), "路由到开放式 Agent。", null);
-                traceRecorder.completeStage(routeStage, "已判定走开放式 Agent 路径。", Map.of(
-                    "chatMode", chatMode.name(),
-                    "executionMode", openChatMode.name(),
-                    "requiresFreshSearch", requiresFreshSearch,
-                    "requiresCurrentDateAnchoring", requiresCurrentDateAnchoring
-                ));
-            }
-            return plan;
-        }
-
         if (!properties.isEnabled()) {
             throw new IllegalStateException("当前文档问答模式未启用，请先开启聊天侧 RAG 编排");
         }
@@ -333,15 +348,10 @@ public class ChatPreparationOrchestrator {
     /**
      * 解析开放式提问的回答方式：默认 ReAct；用户选择了"计划-执行"且该能力开启时，走 PLAN_AND_EXECUTE。
      */
-    private ExecutionMode resolveOpenChatExecutionMode(TaskInfo taskInfo) {
+    private String requestedOpenChatMode(TaskInfo taskInfo) {
         Object selectedMode = taskInfo.runnableConfig() == null ? null
             : taskInfo.runnableConfig().context().get(ChatContextKeys.OPEN_CHAT_MODE);
-        boolean planSelected = selectedMode != null
-            && ExecutionMode.PLAN_AND_EXECUTE.name().equalsIgnoreCase(String.valueOf(selectedMode));
-        if (planSelected && chatAgentProperties.isPlanExecuteEnabled()) {
-            return ExecutionMode.PLAN_AND_EXECUTE;
-        }
-        return ExecutionMode.REACT_AGENT;
+        return selectedMode == null ? null : String.valueOf(selectedMode);
     }
 
     private ConversationExecutionPlan.ConversationExecutionPlanBuilder basePlan(String question,
@@ -394,7 +404,6 @@ public class ChatPreparationOrchestrator {
         snapshot.put("rewriteOverrideEnabled", overrideEnabled);
         snapshot.put("rewriteTemperature", rewriteOptions == null ? null : rewriteOptions.getTemperature());
         snapshot.put("rewriteTopP", rewriteOptions == null ? null : rewriteOptions.getTopP());
-        snapshot.put("rewriteThinking", rewriteOptions == null ? null : rewriteOptions.getThinking());
         return snapshot;
     }
 

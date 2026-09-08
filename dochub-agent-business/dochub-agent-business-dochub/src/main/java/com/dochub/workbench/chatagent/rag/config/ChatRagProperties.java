@@ -86,7 +86,6 @@ public class ChatRagProperties {
 
         private Double topP = 0.3D;
 
-        private Boolean thinking = Boolean.FALSE;
     }
 
     @Data

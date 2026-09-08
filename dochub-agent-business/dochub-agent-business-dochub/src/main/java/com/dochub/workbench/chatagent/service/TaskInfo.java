@@ -61,6 +61,8 @@ public class TaskInfo {
 
     private volatile Disposable disposable;
     private volatile Disposable leaseRenewalDisposable;
+    /** Currently running graph child, used only for cancellation of ReAct/plan work. */
+    private volatile RunnableConfig activeAgentConfig;
 
     public TaskInfo(String conversationId,
                     long exchangeId,
