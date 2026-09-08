@@ -111,25 +111,51 @@
     <article class="config-card embedding-card">
       <div class="card-heading">
         <div>
-          <h3>向量模型运行时摘要</h3>
-          <p>向量配置修改必须进入受保护的蓝绿迁移流程；本页不提供直接修改入口。</p>
+          <h3>向量模型</h3>
+          <p>先从后端测试候选模型；同名模型热切换，不同模型名会启动蓝绿重建。</p>
         </div>
-        <span class="readonly-badge">只读</span>
+        <span class="readonly-badge">受二次验证保护</span>
       </div>
       <dl class="summary-grid">
-        <div><dt>当前状态</dt><dd>{{ embeddingSummary.status }}</dd></div>
-        <div><dt>运行时版本</dt><dd>{{ embeddingSummary.version }}</dd></div>
-        <div><dt>模型</dt><dd>{{ embeddingSummary.modelName }}</dd></div>
-        <div><dt>迁移状态</dt><dd>{{ embeddingSummary.migrationStatus }}</dd></div>
+        <div><dt>运行时版本</dt><dd>{{ embeddingConfig.configVersion || '-' }}</dd></div>
+        <div><dt>模型</dt><dd>{{ embeddingConfig.modelName || '-' }}</dd></div>
+        <div><dt>维度</dt><dd>{{ embeddingConfig.dimension || '-' }}</dd></div>
+        <div><dt>迁移状态</dt><dd>{{ embeddingConfig.migration?.status || '无' }}</dd></div>
       </dl>
-      <p class="summary-note">凭证热更新会在验证后原子切换；模型名称变化会先重建全部向量，再自动切换。</p>
+      <p class="summary-note">文档集合：{{ embeddingConfig.documentCollection || '-' }}；记忆集合：{{ embeddingConfig.memoryCollection || '-' }}。{{ embeddingConfig.hasApiKey ? '已保存加密凭证，留空会保留它。' : '未配置 API Key。' }}</p>
+      <form class="config-form" @submit.prevent="openEmbeddingConfirmation">
+        <label><span>部署类型</span><select v-model="embeddingForm.deploymentType"><option value="REMOTE">远程 API</option><option value="LOCAL">本地服务</option></select></label>
+        <label><span>兼容预设</span><select v-model="embeddingForm.compatibilityPreset"><option value="OPENAI_COMPATIBLE">OpenAI 兼容</option><option value="DASHSCOPE">DashScope</option><option value="OLLAMA">Ollama 兼容</option></select></label>
+        <label><span>Base URL</span><input v-model.trim="embeddingForm.baseUrl" type="url" required /></label>
+        <label><span>请求路径</span><input v-model.trim="embeddingForm.requestPath" type="text" placeholder="/v1/embeddings" /></label>
+        <label class="form-wide"><span>最终请求地址预览</span><output class="url-preview">{{ embeddingFinalUrl || '请先填写 Base URL' }}</output></label>
+        <label><span>模型名称</span><input v-model.trim="embeddingForm.modelName" type="text" required /></label>
+        <label><span>API Key</span><input v-model="embeddingForm.apiKey" type="password" :placeholder="embeddingConfig.hasApiKey ? '已加密保存（留空保留）' : '远程服务必填'" autocomplete="new-password" /></label>
+        <label><span>超时（毫秒）</span><input v-model.number="embeddingForm.timeoutMillis" type="number" min="1" step="1000" /></label>
+        <label v-if="embeddingForm.deploymentType === 'LOCAL'" class="checkbox-field"><input v-model="embeddingForm.clearApiKey" type="checkbox" /><span>清空本地服务 API Key</span></label>
+        <div class="form-actions form-wide">
+          <button class="button secondary" type="button" :disabled="embeddingTesting" @click="testEmbedding">{{ embeddingTesting ? '测试中…' : '测试连接' }}</button>
+          <button class="button primary" type="submit" :disabled="!embeddingTest?.success">确认更换</button>
+          <span v-if="embeddingTest" class="test-status" :class="embeddingTest.success ? 'success' : 'failure'">{{ embeddingTest.success ? `测试通过，${embeddingTest.changeMode === 'HOT_SWAP' ? '将热切换' : '将后台重建'}` : embeddingTest.message }}</span>
+        </div>
+      </form>
+      <EmbeddingMigrationProgress :migration="embeddingConfig.migration" />
+      <div v-if="embeddingConfig.migration?.status === 'FAILED'" class="form-actions migration-actions">
+        <button class="button secondary" type="button" @click="openRetry">二次验证后重试</button>
+        <button class="button secondary" type="button" @click="openRollback">回滚到版本 {{ embeddingConfig.migration.sourceConfigVersion }}</button>
+      </div>
     </article>
+    <EmbeddingModelChangeDialog :open="dialog.open" :candidate="embeddingForm" :active="embeddingConfig" :change-mode="dialog.mode" @close="dialog.open = false" @confirm="confirmEmbeddingChange" />
+    <EmbeddingModelChangeDialog :open="retryDialog.open" :candidate="{}" :active="embeddingConfig" change-mode="HOT_SWAP" @close="retryDialog.open = false" @confirm="confirmRetry" />
+    <EmbeddingModelChangeDialog :open="rollbackDialog.open" :candidate="{}" :active="embeddingConfig" change-mode="HOT_SWAP" @close="rollbackDialog.open = false" @confirm="confirmRollback" />
   </section>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { modelConfigApi } from '../../api/api'
+import EmbeddingModelChangeDialog from '../../components/admin/EmbeddingModelChangeDialog.vue'
+import EmbeddingMigrationProgress from '../../components/admin/EmbeddingMigrationProgress.vue'
 
 const form = reactive({
   deploymentType: 'REMOTE',
@@ -150,16 +176,23 @@ const lastTest = ref(null)
 const testing = ref(false)
 const saving = ref(false)
 const notice = reactive({ message: '', type: 'info' })
-const embeddingSummary = {
-  status: '由受保护迁移流程管理',
-  version: '-',
-  modelName: '-',
-  migrationStatus: '未开始迁移'
-}
+const embeddingConfig = ref({})
+const embeddingForm = reactive({ deploymentType: 'REMOTE', compatibilityPreset: 'OPENAI_COMPATIBLE', baseUrl: '', requestPath: '/v1/embeddings', modelName: '', apiKey: '', timeoutMillis: 30000, clearApiKey: false })
+const embeddingTest = ref(null)
+const embeddingTesting = ref(false)
+const dialog = reactive({ open: false, mode: 'HOT_SWAP' })
+const retryDialog = reactive({ open: false })
+const rollbackDialog = reactive({ open: false })
+let migrationPoll = null
 
 const finalUrl = computed(() => {
   const baseUrl = form.baseUrl.replace(/\/+$/, '')
   const requestPath = form.requestPath.trim().replace(/^\/+/, '')
+  return baseUrl && requestPath ? `${baseUrl}/${requestPath}` : baseUrl
+})
+const embeddingFinalUrl = computed(() => {
+  const baseUrl = embeddingForm.baseUrl.replace(/\/+$/, '')
+  const requestPath = embeddingForm.requestPath.trim().replace(/^\/+/, '')
   return baseUrl && requestPath ? `${baseUrl}/${requestPath}` : baseUrl
 })
 const apiKeyHint = computed(() => activeConfig.value.hasApiKey
@@ -211,6 +244,42 @@ async function loadConfig() {
   }
 }
 
+function applyEmbedding(config) {
+  if (!config) return
+  embeddingConfig.value = config
+  for (const key of ['deploymentType', 'compatibilityPreset', 'baseUrl', 'requestPath', 'modelName', 'timeoutMillis']) {
+    if (config[key] !== undefined && config[key] !== null) embeddingForm[key] = config[key]
+  }
+  embeddingForm.apiKey = ''
+  embeddingForm.clearApiKey = false
+}
+async function loadEmbedding() {
+  try { applyEmbedding(await modelConfigApi.queryEmbedding()) } catch (error) { showNotice(error.message || '加载向量模型配置失败', 'danger') }
+}
+function embeddingPayload() { return { ...embeddingForm, clearApiKey: embeddingForm.deploymentType === 'LOCAL' && embeddingForm.clearApiKey } }
+async function testEmbedding() {
+  embeddingTesting.value = true; embeddingTest.value = null
+  try { embeddingTest.value = await modelConfigApi.testEmbedding(embeddingPayload()); showNotice(embeddingTest.value.success ? '向量模型连接与维度测试通过' : embeddingTest.value.message, embeddingTest.value.success ? 'success' : 'danger') }
+  catch (error) { embeddingTest.value = { success: false, message: error.message || '向量模型测试失败' }; showNotice(embeddingTest.value.message, 'danger') }
+  finally { embeddingTesting.value = false }
+}
+function openEmbeddingConfirmation() { if (!embeddingTest.value?.success) return; dialog.mode = embeddingTest.value.changeMode || 'BLUE_GREEN_REBUILD'; dialog.open = true }
+async function confirmEmbeddingChange(secondFactor) {
+  dialog.open = false
+  try { const result = await modelConfigApi.changeEmbedding({ ...embeddingPayload(), ...secondFactor }); showNotice(result.message || '向量配置已提交', 'success'); await loadEmbedding(); ensureMigrationPolling() }
+  catch (error) { showNotice(error.message || '向量模型更换失败，旧运行时保持不变', 'danger') }
+}
+function openRetry() { retryDialog.open = true }
+async function confirmRetry(secondFactor) { retryDialog.open = false; try { await modelConfigApi.retryEmbeddingMigration({ migrationId: embeddingConfig.value.migration?.migrationId, ...secondFactor }); showNotice('迁移已重新排队，旧运行时保持不变', 'success'); await loadEmbedding(); ensureMigrationPolling() } catch (error) { showNotice(error.message || '重试失败', 'danger') } }
+function openRollback() { rollbackDialog.open = true }
+async function confirmRollback(secondFactor) { rollbackDialog.open = false; try { const result = await modelConfigApi.rollbackEmbedding({ configVersion: embeddingConfig.value.migration?.sourceConfigVersion, ...secondFactor }); showNotice(result.message || '已回滚', 'success'); await loadEmbedding() } catch (error) { showNotice(error.message || '回滚失败', 'danger') } }
+function ensureMigrationPolling() {
+  window.clearTimeout(migrationPoll)
+  const migration = embeddingConfig.value.migration
+  if (!migration || ['COMPLETED', 'FAILED'].includes(migration.status)) return
+  migrationPoll = window.setTimeout(async () => { await loadEmbedding(); ensureMigrationPolling() }, 3000)
+}
+
 async function testChat() {
   testing.value = true
   lastTest.value = null
@@ -238,7 +307,8 @@ async function saveChat() {
   }
 }
 
-onMounted(loadConfig)
+onMounted(async () => { await Promise.all([loadConfig(), loadEmbedding()]); ensureMigrationPolling() })
+onBeforeUnmount(() => window.clearTimeout(migrationPoll))
 </script>
 
 <style scoped>
