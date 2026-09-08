@@ -14,6 +14,8 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Date;
 
@@ -60,6 +62,17 @@ public class EmbeddingMigrationServiceImpl implements EmbeddingMigrationService 
     @Override public DochubEmbeddingModelMigration find(Long migrationId) { return mapper.selectById(migrationId); }
 
     @Override public void schedule(Long migrationId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()
+            && TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { execute(migrationId); }
+            });
+            return;
+        }
+        execute(migrationId);
+    }
+
+    private void execute(Long migrationId) {
         taskExecutor.execute(() -> {
             EmbeddingCollectionRebuildWorker worker = workerProvider.getIfAvailable();
             if (worker != null) worker.resume(migrationId);

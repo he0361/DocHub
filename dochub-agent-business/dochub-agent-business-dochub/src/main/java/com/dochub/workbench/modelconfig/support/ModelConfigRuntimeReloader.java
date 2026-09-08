@@ -108,12 +108,13 @@ public class ModelConfigRuntimeReloader implements MessageListener {
             active = configMapper.selectOne(new LambdaQueryWrapper<DochubAiModelConfig>()
                 .eq(DochubAiModelConfig::getModelType, ModelType.EMBEDDING.name())
                 .eq(DochubAiModelConfig::getActive, 1).eq(DochubAiModelConfig::getStatus, 1).last("LIMIT 1"));
-            if (active == null || active.getConfigVersion() == null || active.getConfigVersion() <= activeEmbeddingVersion()) return;
+            if (active == null || active.getConfigVersion() == null) return;
             EmbeddingRuntimeMetadata metadata = EmbeddingRuntimeMetadata.fromJson(objectMapper, active.getOptionsJson());
             ModelRuntimeSpec spec = new ModelRuntimeSpec(ModelType.EMBEDDING,
                 CompatibilityPreset.valueOf(active.getCompatibilityPreset()), active.getBaseUrl(),
                 "/v1/chat/completions", blankToDefault(active.getRequestPath(), "/v1/embeddings"),
                 cipher.decrypt(active.getEncryptedApiKey()), active.getModelName(), null, null, active.getTimeoutMillis());
+            if (isCurrentEmbedding(active, spec, metadata)) return;
             EmbeddingCandidateProbe.Result candidate = embeddingProbe.test(spec);
             if (candidate.dimension() != metadata.dimension()
                 || qdrant.collectionDimension(metadata.documentCollection()) != metadata.dimension()
@@ -140,6 +141,20 @@ public class ModelConfigRuntimeReloader implements MessageListener {
     private long activeEmbeddingVersion() {
         try { return registry.captureEmbedding().configVersion(); }
         catch (IllegalStateException exception) { return -1L; }
+    }
+
+    /** Version numbers are monotonic for normal saves, but rollback deliberately re-activates an older version. */
+    private boolean isCurrentEmbedding(DochubAiModelConfig active, ModelRuntimeSpec spec, EmbeddingRuntimeMetadata metadata) {
+        try {
+            EmbeddingRuntimeSnapshot snapshot = registry.captureEmbedding();
+            return snapshot.configVersion() == active.getConfigVersion()
+                && snapshot.spec().equals(spec)
+                && snapshot.dimension() == metadata.dimension()
+                && snapshot.documentCollection().equals(metadata.documentCollection())
+                && snapshot.memoryCollection().equals(metadata.memoryCollection());
+        } catch (IllegalStateException ignored) {
+            return false;
+        }
     }
 
     private void audit(DochubAiModelConfig config, int success, String error) {

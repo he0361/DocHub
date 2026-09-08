@@ -38,7 +38,8 @@ public class KnowledgeRouteLlmReranker {
             RouteProposal proposal = new RouteProposal(text(scope, "code"), text(scope, "name"), text(scope, "description"),
                 text(topic, "code"), text(topic, "name"), text(topic, "description"), text(root, "businessCategory"));
             return new LlmRouteAssessment("new".equalsIgnoreCase(text(root, "matchType")), text(root, "selectedScopeCode"),
-                proposal, clamp(root.path("confidence").asDouble(0)), text(root, "reason"));
+                proposal, clamp(root.path("confidence").asDouble(0)), text(root, "reason"),
+                "new".equalsIgnoreCase(text(topic, "matchType")));
         } catch (Exception exception) {
             return LlmRouteAssessment.unavailable(fallback, "reranker_error:" + exception.getClass().getSimpleName());
         }

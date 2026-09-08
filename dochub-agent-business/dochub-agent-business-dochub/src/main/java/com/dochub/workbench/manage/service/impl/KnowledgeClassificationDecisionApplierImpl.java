@@ -36,7 +36,7 @@ public class KnowledgeClassificationDecisionApplierImpl implements KnowledgeClas
         if (result.decision() == ClassificationDecision.REUSE || result.decision() == ClassificationDecision.MANUAL) {
             return reuse(result);
         }
-        return create(result.proposal());
+        return create(result);
     }
 
     private AppliedRoute reuse(KnowledgeClassificationResult result) {
@@ -45,15 +45,25 @@ public class KnowledgeClassificationDecisionApplierImpl implements KnowledgeClas
         DochubKnowledgeScopeNode scope = scopeMapper.selectOne(new LambdaQueryWrapper<DochubKnowledgeScopeNode>()
             .eq(DochubKnowledgeScopeNode::getScopeCode, code).eq(DochubKnowledgeScopeNode::getStatus, BusinessStatus.YES.getCode()).last("LIMIT 1"));
         if (scope == null) throw new IllegalArgumentException("选择的知识域不存在: " + code);
-        DochubKnowledgeTopicNode topic = findTopic(scope.getScopeCode(), result.proposal() == null ? "" : result.proposal().topicCode());
+        String topicCode = result.proposal() == null ? "" : result.proposal().topicCode();
+        DochubKnowledgeTopicNode topic = findTopic(scope.getScopeCode(), topicCode);
+        if (StrUtil.isNotBlank(topicCode) && topic == null) throw new IllegalArgumentException("选择的主题不存在或不属于知识域: " + topicCode);
         return new AppliedRoute(scope.getScopeCode(), scope.getScopeName(), topic == null ? "" : topic.getTopicCode(), topic == null ? "" : topic.getTopicName());
     }
 
-    private AppliedRoute create(RouteProposal proposal) {
+    private AppliedRoute create(KnowledgeClassificationResult result) {
+        RouteProposal proposal = result.proposal();
         if (proposal == null || StrUtil.isBlank(proposal.scopeName())) throw new IllegalArgumentException("新知识域提案不完整");
-        DochubKnowledgeScopeNode scope = ensureScope(proposal);
+        DochubKnowledgeScopeNode scope = result.selectedCandidate() == null ? ensureScope(proposal) : existingScope(result.selectedScopeCode());
         DochubKnowledgeTopicNode topic = StrUtil.isBlank(proposal.topicName()) ? null : ensureTopic(scope.getScopeCode(), proposal);
         return new AppliedRoute(scope.getScopeCode(), scope.getScopeName(), topic == null ? "" : topic.getTopicCode(), topic == null ? "" : topic.getTopicName());
+    }
+
+    private DochubKnowledgeScopeNode existingScope(String code) {
+        DochubKnowledgeScopeNode scope = scopeMapper.selectOne(new LambdaQueryWrapper<DochubKnowledgeScopeNode>()
+            .eq(DochubKnowledgeScopeNode::getScopeCode, code).eq(DochubKnowledgeScopeNode::getStatus, BusinessStatus.YES.getCode()).last("LIMIT 1"));
+        if (scope == null) throw new IllegalArgumentException("选择的知识域不存在: " + code);
+        return scope;
     }
 
     private DochubKnowledgeScopeNode ensureScope(RouteProposal proposal) {

@@ -102,7 +102,11 @@ public class KnowledgeClassificationWorkflowServiceImpl implements KnowledgeClas
         if (relation.getCreateTime() == null) relationMapper.insert(relation); else relationMapper.updateById(relation);
     }
 
-    private boolean isManual(DochubDocument document) { return ClassificationStatus.CONFIRMED.name().equals(document.getClassificationStatus()) && StrUtil.isNotBlank(document.getKnowledgeScopeCode()); }
+    /** Auto-classified documents carry a review id, so a later profile regeneration must classify them again. */
+    private boolean isManual(DochubDocument document) {
+        return ClassificationStatus.CONFIRMED.name().equals(document.getClassificationStatus())
+            && StrUtil.isNotBlank(document.getKnowledgeScopeCode()) && document.getClassificationReviewId() == null;
+    }
     private KnowledgeClassificationResult manualResult(DochubDocument document) {
         RouteDescriptor descriptor = new RouteDescriptor(document.getKnowledgeScopeCode(), document.getKnowledgeScopeName(), List.of(), "", List.of(), List.of(), List.of(document.getDocumentName()));
         RouteCandidate candidate = new RouteCandidate(descriptor, 1, 1, 1, "用户上传时明确指定");

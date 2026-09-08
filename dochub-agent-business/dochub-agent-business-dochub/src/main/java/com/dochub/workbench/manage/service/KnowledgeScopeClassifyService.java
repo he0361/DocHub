@@ -57,7 +57,51 @@ public class KnowledgeScopeClassifyService {
         NewRouteValidation validation = assessment.proposesNew()
             ? validator.validate(material, assessment.proposal(), merged)
             : NewRouteValidation.notRequired();
-        return policy.decide(new ClassificationEvidence(merged, semantic.available(), assessment, validation));
+        KnowledgeClassificationResult scopeResult = policy.decide(new ClassificationEvidence(merged, semantic.available(), assessment, validation));
+        return governTopic(material, assessment, scopeResult);
+    }
+
+    /** New topics follow the same conservative score-plus-independent-validation gate as scopes. */
+    private KnowledgeClassificationResult governTopic(ClassificationMaterial material, LlmRouteAssessment assessment,
+                                                       KnowledgeClassificationResult scopeResult) {
+        if (assessment == null || assessment.proposal() == null || scopeResult.decision() == ClassificationDecision.REVIEW_REQUIRED
+            || !assessment.proposesNewTopic()) return scopeResult;
+        RouteProposal proposal = assessment.proposal();
+        if (StrUtil.isBlank(proposal.topicName())) return reviewForTopic(scopeResult, "新主题提案不完整，需要管理员确认");
+        String scopeCode = scopeResult.selectedScopeCode();
+        if (StrUtil.isBlank(scopeCode)) scopeCode = proposal.scopeCode();
+        if (StrUtil.isBlank(scopeCode)) return reviewForTopic(scopeResult, "新主题缺少知识域，需要管理员确认");
+        List<DochubKnowledgeTopicNode> topics = topicMapper.selectList(new LambdaQueryWrapper<DochubKnowledgeTopicNode>()
+            .eq(DochubKnowledgeTopicNode::getScopeCode, scopeCode)
+            .eq(DochubKnowledgeTopicNode::getStatus, BusinessStatus.YES.getCode()));
+        double bestExisting = topics.stream().mapToDouble(topic -> topicSimilarity(proposal.topicName(), topic)).max().orElse(0);
+        NewRouteValidation validation = validator.validateTopic(material, proposal, scopeCode, topics);
+        var threshold = properties.getTopic();
+        if (bestExisting > threshold.getMaximumExistingForAutomaticNew()
+            || assessment.confidence() < threshold.getLlmNewConfidence()
+            || !validation.accepted() || validation.confidence() < threshold.getValidatorConfidence()) {
+            return reviewForTopic(scopeResult, "新主题复用或新建证据不足，需要管理员确认");
+        }
+        return new KnowledgeClassificationResult(ClassificationDecision.CREATE,
+            Math.min(scopeResult.confidence(), Math.min(assessment.confidence(), validation.confidence())), proposal,
+            scopeResult.selectedCandidate(), scopeResult.candidates(), scopeResult.semanticAvailable(), "两阶段新主题验证通过");
+    }
+
+    private KnowledgeClassificationResult reviewForTopic(KnowledgeClassificationResult result, String reason) {
+        return new KnowledgeClassificationResult(ClassificationDecision.REVIEW_REQUIRED, result.confidence(), result.proposal(),
+            result.selectedCandidate(), result.candidates(), result.semanticAvailable(), reason);
+    }
+
+    private double topicSimilarity(String proposal, DochubKnowledgeTopicNode topic) {
+        Set<String> wanted = tokens(proposal), existing = tokens(topic.getTopicName() + " " + StrUtil.blankToDefault(topic.getAliases(), ""));
+        if (wanted.isEmpty() || existing.isEmpty()) return 0;
+        Set<String> overlap = new HashSet<>(wanted); overlap.retainAll(existing);
+        return (2.0 * overlap.size()) / (wanted.size() + existing.size());
+    }
+
+    private Set<String> tokens(String text) {
+        return Arrays.stream(StrUtil.blankToDefault(text, "").toLowerCase(Locale.ROOT).split("[^\\p{IsAlphabetic}\\p{IsDigit}\\u4e00-\\u9fff]+"))
+            .filter(StrUtil::isNotBlank).collect(Collectors.toSet());
     }
 
     private List<RouteDescriptor> loadRoutes() {
