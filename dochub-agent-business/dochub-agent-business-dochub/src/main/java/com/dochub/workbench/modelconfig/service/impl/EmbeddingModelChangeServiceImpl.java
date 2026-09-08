@@ -18,6 +18,7 @@ import com.dochub.workbench.modelconfig.model.EmbeddingRuntimeCandidate;
 import com.dochub.workbench.modelconfig.model.EmbeddingRuntimeMetadata;
 import com.dochub.workbench.modelconfig.model.ModelRuntimeSpec;
 import com.dochub.workbench.modelconfig.model.ModelType;
+import com.dochub.workbench.modelconfig.model.DeploymentType;
 import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import com.dochub.workbench.modelconfig.security.EmbeddingChangeConfirmationGuard;
@@ -81,9 +82,13 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     public EmbeddingConfigVo query(String username) {
         AdminUserEntity operator = adminGuard.require(username);
         DochubAiModelConfig active = activeConfig();
-        EmbeddingRuntimeSnapshot runtime = registry.captureEmbedding();
         audit(active, operator.getId(), "QUERY", 1, null);
-        return new EmbeddingConfigVo(runtime.configVersion(), active == null ? null : active.getDeploymentType(),
+        EmbeddingRuntimeSnapshot runtime = registry.findEmbedding().orElse(null);
+        if (runtime == null) {
+            return new EmbeddingConfigVo(false, null, null, null, null, null, null, null, false, 0,
+                null, null, null, null, EmbeddingMigrationVo.from(migrationMapper.findLatest()));
+        }
+        return new EmbeddingConfigVo(true, runtime.configVersion(), active == null ? null : active.getDeploymentType(),
             active == null ? runtime.spec().compatibilityPreset().name() : active.getCompatibilityPreset(),
             active == null ? runtime.spec().baseUrl() : active.getBaseUrl(),
             active == null ? runtime.spec().embeddingsPath() : active.getRequestPath(), runtime.spec().modelName(),
@@ -206,7 +211,8 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
         int timeout = dto.getTimeoutMillis() == null ? 30_000 : dto.getTimeoutMillis();
         if (timeout <= 0) throw new DochubFrameException(400, "timeoutMillis 必须大于 0");
         String path = dto.getRequestPath() == null || dto.getRequestPath().isBlank() ? EMBEDDING_PATH : dto.getRequestPath().trim();
-        return new Candidate(new ModelRuntimeSpec(ModelType.EMBEDDING, preset, baseUrl, CHAT_PATH, path,
+        return new Candidate(new ModelRuntimeSpec(ModelType.EMBEDDING, DeploymentType.valueOf(deployment),
+            preset, baseUrl, CHAT_PATH, path,
             apiKey, modelName, null, null, timeout), deployment);
     }
 
@@ -259,7 +265,8 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     }
 
     private ModelRuntimeSpec spec(DochubAiModelConfig config, String apiKey) {
-        return new ModelRuntimeSpec(ModelType.EMBEDDING, CompatibilityPreset.valueOf(config.getCompatibilityPreset()),
+        return new ModelRuntimeSpec(ModelType.EMBEDDING, DeploymentType.valueOf(config.getDeploymentType()),
+            CompatibilityPreset.valueOf(config.getCompatibilityPreset()),
             config.getBaseUrl(), CHAT_PATH, config.getRequestPath(), apiKey, config.getModelName(), null, null,
             config.getTimeoutMillis());
     }

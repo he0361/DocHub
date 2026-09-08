@@ -4,6 +4,12 @@ import com.dochub.workbench.modelconfig.runtime.DynamicChatModel;
 import com.dochub.workbench.modelconfig.runtime.DynamicEmbeddingModel;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import com.dochub.workbench.modelconfig.runtime.OpenAiCompatibleModelFactory;
+import com.dochub.workbench.modelconfig.provider.ChatModelProvider;
+import com.dochub.workbench.modelconfig.provider.ChatModelProviderRouter;
+import com.dochub.workbench.modelconfig.provider.DashScopeChatModelProvider;
+import com.dochub.workbench.modelconfig.provider.OllamaChatModelProvider;
+import com.dochub.workbench.modelconfig.provider.RemoteOpenAiChatModelProvider;
+import com.dochub.workbench.modelconfig.provider.VllmChatModelProvider;
 import com.dochub.workbench.modelconfig.security.ModelCredentialCipher;
 import com.dochub.workbench.modelconfig.support.ChatModelConnectionTester;
 import com.dochub.workbench.modelconfig.support.EmbeddingCandidateProbe;
@@ -20,6 +26,7 @@ import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import java.util.List;
 
 /** Registers the stable primary model delegates used by existing application consumers. */
 @Configuration
@@ -48,6 +55,17 @@ public class DynamicModelConfiguration {
     @Bean
     public ChatModelConnectionTester chatModelConnectionTester() {
         return ChatModelConnectionTester.defaultTester();
+    }
+
+    @Bean
+    public ChatModelProviderRouter chatModelProviderRouter(OpenAiCompatibleModelFactory factory,
+                                                           ChatModelConnectionTester tester) {
+        List<ChatModelProvider> providers = List.of(
+            new VllmChatModelProvider(factory, tester),
+            new OllamaChatModelProvider(factory, tester),
+            new RemoteOpenAiChatModelProvider(factory, tester),
+            new DashScopeChatModelProvider(factory, tester));
+        return new ChatModelProviderRouter(providers);
     }
 
     @Bean

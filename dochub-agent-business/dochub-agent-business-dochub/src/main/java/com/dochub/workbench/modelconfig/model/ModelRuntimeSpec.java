@@ -7,6 +7,7 @@ import java.util.Objects;
  */
 public record ModelRuntimeSpec(
     ModelType modelType,
+    DeploymentType deploymentType,
     CompatibilityPreset compatibilityPreset,
     String baseUrl,
     String completionsPath,
@@ -20,12 +21,21 @@ public record ModelRuntimeSpec(
 
     public ModelRuntimeSpec {
         Objects.requireNonNull(modelType, "modelType must not be null");
+        Objects.requireNonNull(deploymentType, "deploymentType must not be null");
         Objects.requireNonNull(compatibilityPreset, "compatibilityPreset must not be null");
         baseUrl = requireText(baseUrl, "baseUrl");
         completionsPath = requireText(completionsPath, "completionsPath");
         embeddingsPath = requireText(embeddingsPath, "embeddingsPath");
         apiKey = apiKey == null ? "" : apiKey;
         modelName = requireText(modelName, "modelName");
+    }
+
+    /** Compatibility constructor for callers whose legacy configuration is remote. */
+    public ModelRuntimeSpec(ModelType modelType, CompatibilityPreset compatibilityPreset, String baseUrl,
+                            String completionsPath, String embeddingsPath, String apiKey, String modelName,
+                            Double temperature, Integer maxTokens, Integer timeoutMillis) {
+        this(modelType, DeploymentType.REMOTE, compatibilityPreset, baseUrl, completionsPath, embeddingsPath,
+            apiKey, modelName, temperature, maxTokens, timeoutMillis);
     }
 
     private static String requireText(String value, String name) {
@@ -37,7 +47,8 @@ public record ModelRuntimeSpec(
 
     @Override
     public String toString() {
-        return "ModelRuntimeSpec[modelType=" + modelType + ", compatibilityPreset=" + compatibilityPreset
+        return "ModelRuntimeSpec[modelType=" + modelType + ", deploymentType=" + deploymentType
+            + ", compatibilityPreset=" + compatibilityPreset
             + ", baseUrl=" + baseUrl + ", completionsPath=" + completionsPath + ", embeddingsPath="
             + embeddingsPath + ", apiKey=<redacted>, modelName=" + modelName + ", temperature=" + temperature
             + ", maxTokens=" + maxTokens + ", timeoutMillis=" + timeoutMillis + ']';

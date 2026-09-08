@@ -7,12 +7,14 @@ import com.dochub.workbench.modelconfig.data.DochubAiModelConfigAudit;
 import com.dochub.workbench.modelconfig.mapper.DochubAiModelConfigAuditMapper;
 import com.dochub.workbench.modelconfig.mapper.DochubAiModelConfigMapper;
 import com.dochub.workbench.modelconfig.model.CompatibilityPreset;
+import com.dochub.workbench.modelconfig.model.DeploymentType;
 import com.dochub.workbench.modelconfig.model.ModelRuntimeSpec;
 import com.dochub.workbench.modelconfig.model.ModelType;
 import com.dochub.workbench.modelconfig.model.EmbeddingRuntimeMetadata;
 import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import com.dochub.workbench.modelconfig.runtime.OpenAiCompatibleModelFactory;
+import com.dochub.workbench.modelconfig.provider.ChatModelProviderRouter;
 import com.dochub.workbench.modelconfig.security.ModelCredentialCipher;
 import org.springframework.ai.chat.model.ChatModel;
 import com.dochub.workbench.manage.support.QdrantVectorStore;
@@ -35,6 +37,7 @@ public class ModelConfigRuntimeReloader implements MessageListener {
     private final UidGenerator uidGenerator;
     private final ModelRuntimeRegistry registry;
     private final OpenAiCompatibleModelFactory factory;
+    private final ChatModelProviderRouter chatProviderRouter;
     private final ModelCredentialCipher cipher;
     private final EmbeddingCandidateProbe embeddingProbe;
     private final QdrantVectorStore qdrant;
@@ -45,6 +48,7 @@ public class ModelConfigRuntimeReloader implements MessageListener {
                                       UidGenerator uidGenerator,
                                       ModelRuntimeRegistry registry,
                                       OpenAiCompatibleModelFactory factory,
+                                      ChatModelProviderRouter chatProviderRouter,
                                       ModelCredentialCipher cipher,
                                       EmbeddingCandidateProbe embeddingProbe,
                                       QdrantVectorStore qdrant,
@@ -54,6 +58,7 @@ public class ModelConfigRuntimeReloader implements MessageListener {
         this.uidGenerator = uidGenerator;
         this.registry = registry;
         this.factory = factory;
+        this.chatProviderRouter = chatProviderRouter;
         this.cipher = cipher;
         this.embeddingProbe = embeddingProbe;
         this.qdrant = qdrant;
@@ -88,12 +93,14 @@ public class ModelConfigRuntimeReloader implements MessageListener {
                 .eq(DochubAiModelConfig::getModelType, ModelType.CHAT.name())
                 .eq(DochubAiModelConfig::getActive, 1).eq(DochubAiModelConfig::getStatus, 1).last("LIMIT 1"));
             if (active == null || active.getConfigVersion() == null || active.getConfigVersion() <= activeVersion()) return;
-            ModelRuntimeSpec spec = new ModelRuntimeSpec(ModelType.CHAT,
+            DeploymentType deployment = DeploymentType.valueOf(active.getDeploymentType());
+            ModelRuntimeSpec spec = new ModelRuntimeSpec(ModelType.CHAT, deployment,
                 CompatibilityPreset.valueOf(active.getCompatibilityPreset()), active.getBaseUrl(),
                 blankToDefault(active.getRequestPath(), "/v1/chat/completions"), "/v1/embeddings",
-                cipher.decrypt(active.getEncryptedApiKey()), active.getModelName(), active.getTemperature(),
+                deployment == DeploymentType.LOCAL ? "" : cipher.decrypt(active.getEncryptedApiKey()),
+                active.getModelName(), active.getTemperature(),
                 active.getMaxTokens(), active.getTimeoutMillis());
-            ChatModel model = factory.chatModel(spec);
+            ChatModel model = chatProviderRouter.requireProvider(spec).create(spec);
             registry.activateChat(active.getConfigVersion(), model, spec);
             auditSafely(active, 1, null);
         }
@@ -111,6 +118,7 @@ public class ModelConfigRuntimeReloader implements MessageListener {
             if (active == null || active.getConfigVersion() == null) return;
             EmbeddingRuntimeMetadata metadata = EmbeddingRuntimeMetadata.fromJson(objectMapper, active.getOptionsJson());
             ModelRuntimeSpec spec = new ModelRuntimeSpec(ModelType.EMBEDDING,
+                DeploymentType.valueOf(active.getDeploymentType()),
                 CompatibilityPreset.valueOf(active.getCompatibilityPreset()), active.getBaseUrl(),
                 "/v1/chat/completions", blankToDefault(active.getRequestPath(), "/v1/embeddings"),
                 cipher.decrypt(active.getEncryptedApiKey()), active.getModelName(), null, null, active.getTimeoutMillis());

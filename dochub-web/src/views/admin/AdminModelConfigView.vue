@@ -113,6 +113,7 @@
         </div>
         <span class="readonly-badge">受二次验证保护</span>
       </div>
+      <p v-if="embeddingNotice" class="notice info">{{ embeddingNotice }}</p>
       <dl class="summary-grid">
         <div><dt>运行时版本</dt><dd>{{ embeddingConfig.configVersion || '-' }}</dd></div>
         <div><dt>模型</dt><dd>{{ embeddingConfig.modelName || '-' }}</dd></div>
@@ -173,6 +174,7 @@ const testing = ref(false)
 const saving = ref(false)
 const notice = reactive({ message: '', type: 'info' })
 const embeddingConfig = ref({})
+const embeddingNotice = ref('')
 const embeddingForm = reactive({ deploymentType: 'REMOTE', compatibilityPreset: 'OPENAI_COMPATIBLE', baseUrl: '', requestPath: '/v1/embeddings', modelName: '', apiKey: '', timeoutMillis: 30000 })
 const embeddingTest = ref(null)
 const embeddingTesting = ref(false)
@@ -241,13 +243,15 @@ async function loadConfig() {
 function applyEmbedding(config) {
   if (!config) return
   embeddingConfig.value = config
+  embeddingNotice.value = config.configured === false ? '尚未配置向量模型，当前向量功能不可用' : ''
   for (const key of ['deploymentType', 'compatibilityPreset', 'baseUrl', 'requestPath', 'modelName', 'timeoutMillis']) {
     if (config[key] !== undefined && config[key] !== null) embeddingForm[key] = config[key]
   }
   embeddingForm.apiKey = ''
 }
 async function loadEmbedding() {
-  try { applyEmbedding(await modelConfigApi.queryEmbedding()) } catch (error) { showNotice(error.message || '加载向量模型配置失败', 'danger') }
+  try { applyEmbedding(await modelConfigApi.queryEmbedding()) }
+  catch (error) { embeddingNotice.value = error.message || '加载向量模型配置失败' }
 }
 function embeddingPayload() { return { ...embeddingForm } }
 async function testEmbedding() {

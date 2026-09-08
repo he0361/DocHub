@@ -35,6 +35,26 @@ import static org.mockito.Mockito.when;
 class EmbeddingModelChangeServiceTest {
 
     @Test
+    void queryReturnsUnconfiguredStateWhenNoEmbeddingRuntimeExists() {
+        DochubAiModelConfigMapper configMapper = mock(DochubAiModelConfigMapper.class);
+        AdminGuard adminGuard = mock(AdminGuard.class);
+        AdminUserEntity administrator = new AdminUserEntity();
+        administrator.setId(1L);
+        when(adminGuard.require("admin")).thenReturn(administrator);
+        EmbeddingModelChangeServiceImpl service = new EmbeddingModelChangeServiceImpl(configMapper,
+            mock(DochubAiModelConfigAuditMapper.class), mock(DochubEmbeddingModelMigrationMapper.class),
+            mock(UidGenerator.class), new ModelCredentialCipher(""), new ModelRuntimeRegistry(),
+            mock(EmbeddingCandidateProbe.class), mock(EmbeddingMigrationService.class),
+            mock(EmbeddingRuntimeActivator.class), mock(EmbeddingChangeConfirmationGuard.class), adminGuard,
+            mock(QdrantVectorStore.class), new ObjectMapper());
+
+        var result = service.query("admin");
+
+        assertThat(result.configured()).isFalse();
+        assertThat(result.modelName()).isNull();
+    }
+
+    @Test
     void localEmbeddingCandidateWithoutApiKeyClearsPreviouslySavedRemoteCredential() {
         DochubAiModelConfigMapper configMapper = mock(DochubAiModelConfigMapper.class);
         ModelCredentialCipher cipher = new ModelCredentialCipher(Base64.getEncoder().encodeToString(new byte[32]));

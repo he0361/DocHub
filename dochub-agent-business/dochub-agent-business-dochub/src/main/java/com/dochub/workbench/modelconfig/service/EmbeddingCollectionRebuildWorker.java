@@ -14,6 +14,7 @@ import com.dochub.workbench.modelconfig.model.CompatibilityPreset;
 import com.dochub.workbench.modelconfig.model.EmbeddingMigrationStatus;
 import com.dochub.workbench.modelconfig.model.ModelRuntimeSpec;
 import com.dochub.workbench.modelconfig.model.ModelType;
+import com.dochub.workbench.modelconfig.model.DeploymentType;
 import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
 import com.dochub.workbench.modelconfig.runtime.OpenAiCompatibleModelFactory;
 import com.dochub.workbench.modelconfig.security.ModelCredentialCipher;
@@ -192,6 +193,7 @@ public class EmbeddingCollectionRebuildWorker {
 
     private EmbeddingRuntimeSnapshot targetRuntime(DochubEmbeddingModelMigration job, DochubAiModelConfig config) {
         ModelRuntimeSpec spec = new ModelRuntimeSpec(ModelType.EMBEDDING,
+            DeploymentType.valueOf(config.getDeploymentType()),
             CompatibilityPreset.valueOf(config.getCompatibilityPreset()), config.getBaseUrl(),
             "/v1/chat/completions", config.getRequestPath(), cipher.decrypt(config.getEncryptedApiKey()),
             config.getModelName(), null, null, config.getTimeoutMillis());

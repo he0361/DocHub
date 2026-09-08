@@ -9,12 +9,12 @@ import com.dochub.workbench.modelconfig.mapper.DochubAiModelConfigMapper;
 import com.dochub.workbench.modelconfig.model.CompatibilityPreset;
 import com.dochub.workbench.modelconfig.model.ModelRuntimeSpec;
 import com.dochub.workbench.modelconfig.model.ModelType;
+import com.dochub.workbench.modelconfig.provider.ChatModelProvider;
+import com.dochub.workbench.modelconfig.provider.ChatModelProviderRouter;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
-import com.dochub.workbench.modelconfig.runtime.OpenAiCompatibleModelFactory;
 import com.dochub.workbench.modelconfig.security.ModelCredentialCipher;
 import com.dochub.workbench.modelconfig.service.impl.ModelConfigServiceImpl;
 import com.dochub.workbench.modelconfig.support.ChatModelPolicyValidator;
-import com.dochub.workbench.modelconfig.support.ChatModelConnectionTester;
 import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
 import com.dochub.workbench.modelconfig.support.AdminGuard;
 import com.dochub.workbench.modelconfig.support.ModelConfigFailureAuditRecorder;
@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,9 +38,10 @@ class ModelConfigServiceImplTest {
     @Test
     void localChatCandidateWithoutApiKeyClearsPreviouslySavedRemoteCredential() {
         DochubAiModelConfigMapper configMapper = mock(DochubAiModelConfigMapper.class);
-        OpenAiCompatibleModelFactory factory = mock(OpenAiCompatibleModelFactory.class);
+        ChatModelProvider provider = mock(ChatModelProvider.class);
+        when(provider.supports(any(), any())).thenReturn(true);
         AtomicReference<ModelRuntimeSpec> captured = new AtomicReference<>();
-        when(factory.chatModel(any())).thenAnswer(invocation -> {
+        when(provider.create(any())).thenAnswer(invocation -> {
             captured.set(invocation.getArgument(0));
             return mock(ChatModel.class);
         });
@@ -54,8 +54,8 @@ class ModelConfigServiceImplTest {
         current.setEncryptedApiKey("previously-encrypted-remote-secret");
         when(configMapper.selectOne(any())).thenReturn(current);
         ModelConfigServiceImpl service = new ModelConfigServiceImpl(configMapper,
-            mock(DochubAiModelConfigAuditMapper.class), mock(UidGenerator.class), new ModelRuntimeRegistry(), factory,
-            cipher, new ChatModelPolicyValidator(), (model, toolCallingSupported) -> { }, adminGuard,
+            mock(DochubAiModelConfigAuditMapper.class), mock(UidGenerator.class), new ModelRuntimeRegistry(),
+            new ChatModelProviderRouter(java.util.List.of(provider)), cipher, new ChatModelPolicyValidator(), adminGuard,
             mock(ModelConfigVersionPublisher.class), mock(ModelConfigFailureAuditRecorder.class));
         ModelConfigTestDto local = new ModelConfigTestDto();
         local.setDeploymentType("LOCAL");
@@ -83,8 +83,8 @@ class ModelConfigServiceImplTest {
         when(configMapper.selectOne(any())).thenReturn(active);
         ModelConfigServiceImpl service = new ModelConfigServiceImpl(configMapper,
             mock(DochubAiModelConfigAuditMapper.class), mock(UidGenerator.class), new ModelRuntimeRegistry(),
-            mock(OpenAiCompatibleModelFactory.class), new ModelCredentialCipher(""), new ChatModelPolicyValidator(),
-            mock(ChatModelConnectionTester.class), adminGuard, mock(ModelConfigVersionPublisher.class),
+            new ChatModelProviderRouter(java.util.List.of()), new ModelCredentialCipher(""), new ChatModelPolicyValidator(),
+            adminGuard, mock(ModelConfigVersionPublisher.class),
             mock(ModelConfigFailureAuditRecorder.class));
 
         com.dochub.workbench.modelconfig.vo.ModelConfigVo result = service.queryChat("admin");
@@ -97,20 +97,23 @@ class ModelConfigServiceImplTest {
     @Test
     void failedCandidateTestDoesNotChangeActiveVersion() {
         DochubAiModelConfigMapper configMapper = mock(DochubAiModelConfigMapper.class);
-        OpenAiCompatibleModelFactory factory = mock(OpenAiCompatibleModelFactory.class);
+        ChatModelProvider provider = mock(ChatModelProvider.class);
+        when(provider.supports(any(), any())).thenReturn(true);
         ModelRuntimeRegistry registry = new ModelRuntimeRegistry();
         registry.activateChat(7L, mock(ChatModel.class), spec());
-        when(factory.chatModel(any())).thenReturn(mock(ChatModel.class));
+        when(provider.create(any())).thenReturn(mock(ChatModel.class));
+        org.mockito.Mockito.doThrow(new IllegalStateException("unreachable provider"))
+            .when(provider).probe(any(), org.mockito.ArgumentMatchers.anyBoolean());
         AdminGuard adminGuard = mock(AdminGuard.class);
         com.dochub.workbench.auth.data.AdminUserEntity administrator = new com.dochub.workbench.auth.data.AdminUserEntity();
         administrator.setId(1L);
         when(adminGuard.require("admin")).thenReturn(administrator);
         ModelConfigServiceImpl service = new ModelConfigServiceImpl(configMapper,
-            mock(DochubAiModelConfigAuditMapper.class), mock(UidGenerator.class), registry, factory,
+            mock(DochubAiModelConfigAuditMapper.class), mock(UidGenerator.class), registry,
+            new ChatModelProviderRouter(java.util.List.of(provider)),
             new ModelCredentialCipher(Base64.getEncoder().encodeToString(new byte[32])),
-            new ChatModelPolicyValidator(), (model, toolCallingSupported) -> {
-                throw new IllegalStateException("unreachable provider");
-            }, adminGuard, mock(ModelConfigVersionPublisher.class), mock(ModelConfigFailureAuditRecorder.class));
+            new ChatModelPolicyValidator(), adminGuard, mock(ModelConfigVersionPublisher.class),
+            mock(ModelConfigFailureAuditRecorder.class));
 
         assertThatThrownBy(() -> service.saveChat("admin", dto()))
             .hasMessageContaining("连接测试失败");

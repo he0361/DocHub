@@ -6,6 +6,7 @@ import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.ProviderAwareOpenAiChatModel;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.openai.OpenAiEmbeddingOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -31,11 +32,18 @@ public final class OpenAiCompatibleModelFactory {
     }
 
     public ChatModel chatModel(ModelRuntimeSpec spec) {
+        return chatModel(spec, defaultExtraBody(spec), httpClientBuilders);
+    }
+
+    public ChatModel chatModel(ModelRuntimeSpec spec, Map<String, Object> extraBody,
+                               OpenAiHttpClientBuilderFactory builders) {
         Objects.requireNonNull(spec, "spec must not be null");
-        return OpenAiChatModel.builder()
-            .openAiApi(openAiApi(spec))
-            .defaultOptions(chatOptions(spec))
-            .build();
+        OpenAiApi api = openAiApi(spec, builders);
+        OpenAiChatOptions options = chatOptions(spec, extraBody);
+        if (!extraBody.isEmpty()) {
+            return new ProviderAwareOpenAiChatModel(api, options, extraBody);
+        }
+        return OpenAiChatModel.builder().openAiApi(api).defaultOptions(options).build();
     }
 
     public EmbeddingModel embeddingModel(ModelRuntimeSpec spec) {
@@ -45,6 +53,10 @@ public final class OpenAiCompatibleModelFactory {
     }
 
     public OpenAiChatOptions chatOptions(ModelRuntimeSpec spec) {
+        return chatOptions(spec, defaultExtraBody(spec));
+    }
+
+    public OpenAiChatOptions chatOptions(ModelRuntimeSpec spec, Map<String, Object> extraBody) {
         Objects.requireNonNull(spec, "spec must not be null");
         OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder()
             .model(spec.modelName())
@@ -55,12 +67,15 @@ public final class OpenAiCompatibleModelFactory {
         if (spec.maxTokens() != null) {
             builder.maxTokens(spec.maxTokens());
         }
-        Map<String, Object> extraBody = switch (spec.compatibilityPreset()) {
+        return builder.extraBody(extraBody).build();
+    }
+
+    private Map<String, Object> defaultExtraBody(ModelRuntimeSpec spec) {
+        return switch (spec.compatibilityPreset()) {
             case DASHSCOPE -> Map.of("enable_thinking", false);
             case OLLAMA -> Map.of("think", false);
             case OPENAI_COMPATIBLE -> localQwenVllmOptions(spec);
         };
-        return builder.extraBody(extraBody).build();
     }
 
     /**
@@ -75,14 +90,18 @@ public final class OpenAiCompatibleModelFactory {
     }
 
     private OpenAiApi openAiApi(ModelRuntimeSpec spec) {
+        return openAiApi(spec, httpClientBuilders);
+    }
+
+    private OpenAiApi openAiApi(ModelRuntimeSpec spec, OpenAiHttpClientBuilderFactory builders) {
         Duration timeout = spec.timeoutMillis() == null ? DEFAULT_TIMEOUT : Duration.ofMillis(spec.timeoutMillis());
         return OpenAiApi.builder()
             .baseUrl(spec.baseUrl())
             .apiKey(spec.apiKey())
             .completionsPath(spec.completionsPath())
             .embeddingsPath(spec.embeddingsPath())
-            .restClientBuilder(httpClientBuilders.restClientBuilder(timeout))
-            .webClientBuilder(httpClientBuilders.webClientBuilder(timeout))
+            .restClientBuilder(builders.restClientBuilder(timeout))
+            .webClientBuilder(builders.webClientBuilder(timeout))
             .build();
     }
 }

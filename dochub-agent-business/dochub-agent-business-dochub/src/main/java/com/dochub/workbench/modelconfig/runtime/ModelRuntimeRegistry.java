@@ -41,11 +41,13 @@ public final class ModelRuntimeRegistry {
     }
 
     public EmbeddingRuntimeSnapshot captureEmbedding() {
-        EmbeddingRuntimeSnapshot snapshot = embedding.get();
-        if (snapshot == null) {
-            throw new IllegalStateException("No active embedding model runtime snapshot");
-        }
-        return snapshot;
+        return findEmbedding().orElseThrow(
+            () -> new IllegalStateException("No active embedding model runtime snapshot"));
+    }
+
+    /** Returns no value while an administrator has not configured an embedding runtime yet. */
+    public Optional<EmbeddingRuntimeSnapshot> findEmbedding() {
+        return Optional.ofNullable(embedding.get());
     }
 
     public EmbeddingRuntimeSnapshot requireEmbedding() {

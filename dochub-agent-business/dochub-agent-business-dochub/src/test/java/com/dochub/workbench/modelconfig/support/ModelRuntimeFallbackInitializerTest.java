@@ -17,7 +17,8 @@ class ModelRuntimeFallbackInitializerTest {
         DochubAiModelConfigMapper mapper = mock(DochubAiModelConfigMapper.class);
         OpenAiCompatibleModelFactory factory = mock(OpenAiCompatibleModelFactory.class);
         ModelRuntimeFallbackInitializer initializer = new ModelRuntimeFallbackInitializer(mapper,
-            new ModelRuntimeRegistry(), factory, new QdrantProperties());
+            new ModelRuntimeRegistry(), factory,
+            mock(com.dochub.workbench.modelconfig.provider.ChatModelProviderRouter.class), new QdrantProperties());
         ReflectionTestUtils.setField(initializer, "apiKey", "");
 
         initializer.seedFallbacks();

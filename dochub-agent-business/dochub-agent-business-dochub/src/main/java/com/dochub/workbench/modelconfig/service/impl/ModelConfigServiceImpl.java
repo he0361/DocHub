@@ -11,13 +11,14 @@ import com.dochub.workbench.modelconfig.dto.ModelConfigTestDto;
 import com.dochub.workbench.modelconfig.mapper.DochubAiModelConfigAuditMapper;
 import com.dochub.workbench.modelconfig.mapper.DochubAiModelConfigMapper;
 import com.dochub.workbench.modelconfig.model.CompatibilityPreset;
+import com.dochub.workbench.modelconfig.model.DeploymentType;
 import com.dochub.workbench.modelconfig.model.ModelRuntimeSpec;
 import com.dochub.workbench.modelconfig.model.ModelType;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
-import com.dochub.workbench.modelconfig.runtime.OpenAiCompatibleModelFactory;
+import com.dochub.workbench.modelconfig.provider.ChatModelProvider;
+import com.dochub.workbench.modelconfig.provider.ChatModelProviderRouter;
 import com.dochub.workbench.modelconfig.security.ModelCredentialCipher;
 import com.dochub.workbench.modelconfig.service.ModelConfigService;
-import com.dochub.workbench.modelconfig.support.ChatModelConnectionTester;
 import com.dochub.workbench.modelconfig.support.ChatModelPolicyValidator;
 import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
 import com.dochub.workbench.modelconfig.support.ModelConfigFailureAuditRecorder;
@@ -46,10 +47,9 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     private final DochubAiModelConfigAuditMapper auditMapper;
     private final UidGenerator uidGenerator;
     private final ModelRuntimeRegistry registry;
-    private final OpenAiCompatibleModelFactory factory;
+    private final ChatModelProviderRouter providerRouter;
     private final ModelCredentialCipher cipher;
     private final ChatModelPolicyValidator policyValidator;
-    private final ChatModelConnectionTester connectionTester;
     private final AdminGuard adminGuard;
     private final ModelConfigVersionPublisher versionPublisher;
     private final ModelConfigFailureAuditRecorder failureAuditRecorder;
@@ -58,10 +58,9 @@ public class ModelConfigServiceImpl implements ModelConfigService {
                                   DochubAiModelConfigAuditMapper auditMapper,
                                   UidGenerator uidGenerator,
                                   ModelRuntimeRegistry registry,
-                                  OpenAiCompatibleModelFactory factory,
+                                  ChatModelProviderRouter providerRouter,
                                   ModelCredentialCipher cipher,
                                   ChatModelPolicyValidator policyValidator,
-                                  ChatModelConnectionTester connectionTester,
                                   AdminGuard adminGuard,
                                   ModelConfigVersionPublisher versionPublisher,
                                   ModelConfigFailureAuditRecorder failureAuditRecorder) {
@@ -69,10 +68,9 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         this.auditMapper = auditMapper;
         this.uidGenerator = uidGenerator;
         this.registry = registry;
-        this.factory = factory;
+        this.providerRouter = providerRouter;
         this.cipher = cipher;
         this.policyValidator = policyValidator;
-        this.connectionTester = connectionTester;
         this.adminGuard = adminGuard;
         this.versionPublisher = versionPublisher;
         this.failureAuditRecorder = failureAuditRecorder;
@@ -92,8 +90,9 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         Candidate candidate = candidate(dto, activeChat(), false);
         requireCipherForRemote(candidate.deploymentType());
         try {
-            ChatModel model = factory.chatModel(candidate.spec());
-            connectionTester.test(model, candidate.toolCallingSupported());
+            ChatModelProvider provider = providerRouter.requireProvider(candidate.spec());
+            ChatModel model = provider.create(candidate.spec());
+            provider.probe(model, candidate.toolCallingSupported());
             audit(null, operator, "TEST", 1, null, candidate.baseUrl());
             return new ModelConnectionTestVo(true, "连接测试成功", policyValidator.rejectedReasoningPatterns());
         }
@@ -109,9 +108,10 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         AdminUserEntity operator = adminGuard.require(username);
         Candidate candidate = candidate(dto, activeChat(), dto != null && Boolean.TRUE.equals(dto.getClearApiKey()));
         requireCipherForRemote(candidate.deploymentType());
-        ChatModel model = factory.chatModel(candidate.spec());
+        ChatModelProvider provider = providerRouter.requireProvider(candidate.spec());
+        ChatModel model = provider.create(candidate.spec());
         try {
-            connectionTester.test(model, candidate.toolCallingSupported());
+            provider.probe(model, candidate.toolCallingSupported());
         }
         catch (RuntimeException exception) {
             failureAuditRecorder.record(operator.getId(), maskEndpoint(candidate.baseUrl()), "连接测试失败");
@@ -199,7 +199,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
             throw new DochubFrameException(400, "timeoutMillis 必须大于 0");
         }
         String completionsPath = blankToDefault(dto.getRequestPath(), DEFAULT_CHAT_PATH);
-        ModelRuntimeSpec spec = new ModelRuntimeSpec(ModelType.CHAT, preset, baseUrl, completionsPath,
+        DeploymentType deployment = DeploymentType.valueOf(deploymentType);
+        ModelRuntimeSpec spec = new ModelRuntimeSpec(ModelType.CHAT, deployment, preset, baseUrl, completionsPath,
             DEFAULT_EMBEDDING_PATH, apiKey, modelName, dto.getTemperature(), dto.getMaxTokens(), timeout);
         return new Candidate(spec, deploymentType, Boolean.TRUE.equals(dto.getToolCallingSupported()), baseUrl);
     }

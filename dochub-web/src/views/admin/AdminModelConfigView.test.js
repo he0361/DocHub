@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/vue'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AdminModelConfigView from './AdminModelConfigView.vue'
+import { modelConfigApi } from '../../api/api'
 
 vi.mock('../../api/api', () => ({
   modelConfigApi: {
@@ -17,6 +18,17 @@ vi.mock('../../api/api', () => ({
 
 describe('AdminModelConfigView', () => {
   afterEach(() => cleanup())
+
+  it('keeps chat configuration visible when embedding is not configured', async () => {
+    modelConfigApi.query.mockResolvedValueOnce({ modelName: 'Qwen3.8-27B', active: true })
+    modelConfigApi.queryEmbedding.mockResolvedValueOnce({ configured: false })
+
+    render(AdminModelConfigView)
+
+    await waitFor(() => expect(screen.getByDisplayValue('Qwen3.8-27B')).toBeTruthy())
+    expect(screen.getByText('尚未配置向量模型，当前向量功能不可用')).toBeTruthy()
+    expect(screen.queryByText('系统错误，请稍后重试!')).toBeNull()
+  })
 
   it('shows the global-impact warning and final URL preview', async () => {
     render(AdminModelConfigView)
