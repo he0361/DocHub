@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let a super administrator safely update embedding credentials/endpoints or replace the embedding model, while keeping the old model and vectors live until a verified background rebuild can switch atomically.
+**Goal:** Let an administrator safely update embedding credentials/endpoints or replace the embedding model, while keeping the old model and vectors live until a verified background rebuild can switch atomically.
 
 **Architecture:** All vector reads and writes capture one immutable `EmbeddingRuntimeSnapshot` containing the embedding model, model identity, document collection, and memory collection. Same-model endpoint/key changes test the candidate dimension and atomically replace only the model. A model-name change creates inactive versioned collections, rebuilds document chunks and conversation memories in the background, replays a durable mutation journal, enters a short finalization barrier, verifies counts and probes, then activates the new configuration and both collections as one snapshot. Failure leaves the old snapshot active and old collections retained.
 

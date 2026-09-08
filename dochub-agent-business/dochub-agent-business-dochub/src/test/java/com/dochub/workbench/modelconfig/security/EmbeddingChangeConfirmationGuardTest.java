@@ -1,7 +1,7 @@
 package com.dochub.workbench.modelconfig.security;
 
 import com.dochub.workbench.auth.service.AdminAuthService;
-import com.dochub.workbench.modelconfig.support.SuperAdminGuard;
+import com.dochub.workbench.modelconfig.support.AdminGuard;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -10,9 +10,9 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class EmbeddingChangeConfirmationGuardTest {
-    private final SuperAdminGuard superAdminGuard = mock(SuperAdminGuard.class);
+    private final AdminGuard adminGuard = mock(AdminGuard.class);
     private final AdminAuthService authService = mock(AdminAuthService.class);
-    private final EmbeddingChangeConfirmationGuard guard = new EmbeddingChangeConfirmationGuard(superAdminGuard, authService);
+    private final EmbeddingChangeConfirmationGuard guard = new EmbeddingChangeConfirmationGuard(adminGuard, authService);
 
     @Test
     void rejectsWrongPassword() {

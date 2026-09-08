@@ -27,7 +27,7 @@ import com.dochub.workbench.modelconfig.service.EmbeddingModelChangeService;
 import com.dochub.workbench.modelconfig.service.EmbeddingModelChangeServiceImplSupport;
 import com.dochub.workbench.modelconfig.service.EmbeddingRuntimeActivator;
 import com.dochub.workbench.modelconfig.support.EmbeddingCandidateProbe;
-import com.dochub.workbench.modelconfig.support.SuperAdminGuard;
+import com.dochub.workbench.modelconfig.support.AdminGuard;
 import com.dochub.workbench.modelconfig.support.VersionedVectorCollectionNames;
 import com.dochub.workbench.modelconfig.vo.EmbeddingConfigVo;
 import com.dochub.workbench.modelconfig.vo.EmbeddingMigrationVo;
@@ -58,7 +58,7 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     private final EmbeddingMigrationService migrations;
     private final EmbeddingRuntimeActivator activator;
     private final EmbeddingChangeConfirmationGuard confirmationGuard;
-    private final SuperAdminGuard superAdminGuard;
+    private final AdminGuard adminGuard;
     private final QdrantVectorStore qdrant;
     private final ObjectMapper objectMapper;
 
@@ -69,17 +69,17 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
                                            ModelRuntimeRegistry registry, EmbeddingCandidateProbe probe,
                                            EmbeddingMigrationService migrations, EmbeddingRuntimeActivator activator,
                                            EmbeddingChangeConfirmationGuard confirmationGuard,
-                                           SuperAdminGuard superAdminGuard, QdrantVectorStore qdrant,
+                                           AdminGuard adminGuard, QdrantVectorStore qdrant,
                                            ObjectMapper objectMapper) {
         this.configMapper = configMapper; this.auditMapper = auditMapper; this.migrationMapper = migrationMapper;
         this.uidGenerator = uidGenerator; this.cipher = cipher; this.registry = registry; this.probe = probe;
         this.migrations = migrations; this.activator = activator; this.confirmationGuard = confirmationGuard;
-        this.superAdminGuard = superAdminGuard; this.qdrant = qdrant; this.objectMapper = objectMapper;
+        this.adminGuard = adminGuard; this.qdrant = qdrant; this.objectMapper = objectMapper;
     }
 
     @Override
     public EmbeddingConfigVo query(String username) {
-        AdminUserEntity operator = superAdminGuard.require(username);
+        AdminUserEntity operator = adminGuard.require(username);
         DochubAiModelConfig active = activeConfig();
         EmbeddingRuntimeSnapshot runtime = registry.captureEmbedding();
         audit(active, operator.getId(), "QUERY", 1, null);
@@ -95,7 +95,7 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
 
     @Override
     public EmbeddingModelTestVo test(String username, EmbeddingModelChangeDto dto) {
-        AdminUserEntity operator = superAdminGuard.require(username);
+        AdminUserEntity operator = adminGuard.require(username);
         Candidate candidate = candidate(dto, activeConfig());
         try {
             EmbeddingCandidateProbe.Result result = probe.test(candidate.spec());
@@ -114,7 +114,7 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     public EmbeddingModelChangeVo change(String username, EmbeddingModelChangeDto dto) {
         requireChangeDto(dto);
         confirmationGuard.verify(username, dto.getCurrentPassword(), dto.getConfirmationPhrase());
-        AdminUserEntity operator = superAdminGuard.require(username);
+        AdminUserEntity operator = adminGuard.require(username);
         migrationMapper.lockMigrationSlot();
         if (migrationMapper.countActive() > 0) {
             throw new DochubFrameException(409, "已有向量模型重建任务正在运行，请等待完成或失败后再更改配置");
@@ -149,7 +149,7 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
 
     @Override
     public EmbeddingMigrationVo migrationStatus(String username, Long migrationId) {
-        superAdminGuard.require(username);
+        adminGuard.require(username);
         DochubEmbeddingModelMigration job = migrationId == null ? migrationMapper.findLatest() : migrations.find(migrationId);
         if (job == null) throw new DochubFrameException(404, "向量迁移任务不存在");
         return EmbeddingMigrationVo.from(job);
@@ -159,7 +159,7 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     public EmbeddingMigrationVo retry(String username, EmbeddingMigrationRetryDto dto) {
         if (dto == null || dto.getMigrationId() == null) throw new DochubFrameException(400, "migrationId 不能为空");
         confirmationGuard.verify(username, dto.getCurrentPassword(), dto.getConfirmationPhrase());
-        AdminUserEntity operator = superAdminGuard.require(username);
+        AdminUserEntity operator = adminGuard.require(username);
         migrations.retry(dto.getMigrationId());
         DochubEmbeddingModelMigration job = migrations.find(dto.getMigrationId());
         DochubAiModelConfig config = configByVersion(job == null ? null : job.getTargetConfigVersion());
@@ -172,7 +172,7 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     public EmbeddingModelChangeVo rollback(String username, EmbeddingRollbackDto dto) {
         if (dto == null || dto.getConfigVersion() == null) throw new DochubFrameException(400, "configVersion 不能为空");
         confirmationGuard.verify(username, dto.getCurrentPassword(), dto.getConfirmationPhrase());
-        AdminUserEntity operator = superAdminGuard.require(username);
+        AdminUserEntity operator = adminGuard.require(username);
         if (migrations.current() != null) {
             throw new DochubFrameException(409, "向量模型重建期间不能回滚，请等待任务结束或失败");
         }
@@ -211,9 +211,11 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     }
 
     private String resolveApiKey(EmbeddingModelChangeDto dto, DochubAiModelConfig current, String deployment) {
-        if (Boolean.TRUE.equals(dto.getClearApiKey())) {
-            if (!"LOCAL".equals(deployment)) throw new DochubFrameException(400, "仅本地部署允许清空 API Key");
+        if ("LOCAL".equals(deployment)) {
             return "";
+        }
+        if (Boolean.TRUE.equals(dto.getClearApiKey())) {
+            throw new DochubFrameException(400, "仅本地部署允许清空 API Key");
         }
         if (dto.getApiKey() != null && !dto.getApiKey().isBlank()) return dto.getApiKey().trim();
         if (current != null && current.getEncryptedApiKey() != null && !current.getEncryptedApiKey().isBlank()) return cipher.decrypt(current.getEncryptedApiKey());

@@ -28,7 +28,7 @@
       <div class="card-heading">
         <div>
           <h3>对话模型</h3>
-          <p>保存时后端会再次测试候选配置；空白 API Key 会保留已加密保存的凭证。</p>
+          <p>保存时后端会再次测试候选配置；远程模型留空 API Key 会保留已加密保存的凭证。</p>
         </div>
         <div class="runtime-details">
           <span>版本 {{ activeConfig.configVersion || '-' }}</span>
@@ -69,11 +69,12 @@
           <span>模型名称</span>
           <input v-model.trim="form.modelName" type="text" placeholder="gpt-4o-mini" required />
         </label>
-        <label>
+        <label v-if="form.deploymentType === 'REMOTE'">
           <span>API Key</span>
           <input v-model="form.apiKey" type="password" :placeholder="apiKeyPlaceholder" autocomplete="new-password" />
           <small>{{ apiKeyHint }}</small>
         </label>
+        <p v-else class="local-api-key-hint">本地服务无需填写 API Key；保存时会自动清除原有远程凭证。</p>
         <label>
           <span>温度</span>
           <input v-model.number="form.temperature" type="number" min="0" max="2" step="0.1" />
@@ -89,10 +90,6 @@
         <label class="checkbox-field">
           <input v-model="form.toolCallingSupported" type="checkbox" />
           <span>该模型支持工具调用</span>
-        </label>
-        <label v-if="form.deploymentType === 'LOCAL'" class="checkbox-field form-wide">
-          <input v-model="form.clearApiKey" type="checkbox" />
-          <span>清空本地服务 API Key</span>
         </label>
         <div class="form-actions form-wide">
           <button class="button secondary" type="button" :disabled="testing" @click="testChat">
@@ -130,9 +127,9 @@
         <label><span>请求路径</span><input v-model.trim="embeddingForm.requestPath" type="text" placeholder="/v1/embeddings" /></label>
         <label class="form-wide"><span>最终请求地址预览</span><output class="url-preview">{{ embeddingFinalUrl || '请先填写 Base URL' }}</output></label>
         <label><span>模型名称</span><input v-model.trim="embeddingForm.modelName" type="text" required /></label>
-        <label><span>API Key</span><input v-model="embeddingForm.apiKey" type="password" :placeholder="embeddingConfig.hasApiKey ? '已加密保存（留空保留）' : '远程服务必填'" autocomplete="new-password" /></label>
+        <label v-if="embeddingForm.deploymentType === 'REMOTE'"><span>API Key</span><input v-model="embeddingForm.apiKey" type="password" :placeholder="embeddingConfig.hasApiKey ? '已加密保存（留空保留）' : '远程服务必填'" autocomplete="new-password" /></label>
+        <p v-else class="local-api-key-hint">本地服务无需填写 API Key；保存时会自动清除原有远程凭证。</p>
         <label><span>超时（毫秒）</span><input v-model.number="embeddingForm.timeoutMillis" type="number" min="1" step="1000" /></label>
-        <label v-if="embeddingForm.deploymentType === 'LOCAL'" class="checkbox-field"><input v-model="embeddingForm.clearApiKey" type="checkbox" /><span>清空本地服务 API Key</span></label>
         <div class="form-actions form-wide">
           <button class="button secondary" type="button" :disabled="embeddingTesting" @click="testEmbedding">{{ embeddingTesting ? '测试中…' : '测试连接' }}</button>
           <button class="button primary" type="submit" :disabled="!embeddingTest?.success">确认更换</button>
@@ -168,7 +165,6 @@ const form = reactive({
   maxTokens: 2048,
   timeoutMillis: 30000,
   toolCallingSupported: true,
-  clearApiKey: false
 })
 
 const activeConfig = ref({})
@@ -177,7 +173,7 @@ const testing = ref(false)
 const saving = ref(false)
 const notice = reactive({ message: '', type: 'info' })
 const embeddingConfig = ref({})
-const embeddingForm = reactive({ deploymentType: 'REMOTE', compatibilityPreset: 'OPENAI_COMPATIBLE', baseUrl: '', requestPath: '/v1/embeddings', modelName: '', apiKey: '', timeoutMillis: 30000, clearApiKey: false })
+const embeddingForm = reactive({ deploymentType: 'REMOTE', compatibilityPreset: 'OPENAI_COMPATIBLE', baseUrl: '', requestPath: '/v1/embeddings', modelName: '', apiKey: '', timeoutMillis: 30000 })
 const embeddingTest = ref(null)
 const embeddingTesting = ref(false)
 const dialog = reactive({ open: false, mode: 'HOT_SWAP' })
@@ -215,8 +211,7 @@ function payload() {
     temperature: form.temperature,
     maxTokens: form.maxTokens,
     timeoutMillis: form.timeoutMillis,
-    toolCallingSupported: form.toolCallingSupported,
-    clearApiKey: form.deploymentType === 'LOCAL' && form.clearApiKey
+    toolCallingSupported: form.toolCallingSupported
   }
 }
 
@@ -233,7 +228,6 @@ function applyConfig(config) {
   }
   if (config.toolCallingSupported !== undefined) form.toolCallingSupported = Boolean(config.toolCallingSupported)
   form.apiKey = ''
-  form.clearApiKey = false
 }
 
 async function loadConfig() {
@@ -251,12 +245,11 @@ function applyEmbedding(config) {
     if (config[key] !== undefined && config[key] !== null) embeddingForm[key] = config[key]
   }
   embeddingForm.apiKey = ''
-  embeddingForm.clearApiKey = false
 }
 async function loadEmbedding() {
   try { applyEmbedding(await modelConfigApi.queryEmbedding()) } catch (error) { showNotice(error.message || '加载向量模型配置失败', 'danger') }
 }
-function embeddingPayload() { return { ...embeddingForm, clearApiKey: embeddingForm.deploymentType === 'LOCAL' && embeddingForm.clearApiKey } }
+function embeddingPayload() { return { ...embeddingForm } }
 async function testEmbedding() {
   embeddingTesting.value = true; embeddingTest.value = null
   try { embeddingTest.value = await modelConfigApi.testEmbedding(embeddingPayload()); showNotice(embeddingTest.value.success ? '向量模型连接与维度测试通过' : embeddingTest.value.message, embeddingTest.value.success ? 'success' : 'danger') }
@@ -326,6 +319,6 @@ onBeforeUnmount(() => window.clearTimeout(migrationPoll))
 .notice { margin: 0; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
 .notice.info { background: var(--color-primary-soft); color: var(--color-primary-strong); }.notice.success { background: #dcfce7; color: #166534; }.notice.danger { background: #fee2e2; color: #991b1b; }
 .config-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; margin-top: 18px; }
-.config-form label { min-width: 0; display: grid; gap: 6px; color: var(--color-muted-strong); font-size: 13px; }.config-form input, .config-form select { min-width: 0; box-sizing: border-box; width: 100%; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: #fff; color: var(--color-text); font: inherit; }.config-form small { color: var(--color-muted); font-size: 12px; }.form-wide { grid-column: 1 / -1; }.url-preview { display: block; min-height: 19px; overflow-wrap: anywhere; padding: 9px 10px; border-radius: 8px; background: var(--color-surface-soft); color: var(--color-primary-strong); }.checkbox-field { display: flex !important; align-items: center; gap: 8px; padding-top: 22px; }.checkbox-field input { width: auto; }.button { border: 1px solid var(--color-border); border-radius: 8px; padding: 9px 14px; cursor: pointer; font: inherit; }.button.primary { color: #fff; border-color: var(--color-primary); background: var(--color-primary); }.button.secondary { background: #fff; color: var(--color-text); }.button:disabled { cursor: wait; opacity: .65; }.form-actions { align-items: center; justify-content: flex-start; flex-wrap: wrap; }.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0 0; }.summary-grid div { padding: 12px; border-radius: 8px; background: var(--color-surface-soft); }.summary-grid dt { color: var(--color-muted); font-size: 12px; }.summary-grid dd { margin: 4px 0 0; color: var(--color-text); font-size: 14px; }
+.config-form label { min-width: 0; display: grid; gap: 6px; color: var(--color-muted-strong); font-size: 13px; }.config-form input, .config-form select { min-width: 0; box-sizing: border-box; width: 100%; padding: 9px 10px; border: 1px solid var(--color-border); border-radius: 8px; background: #fff; color: var(--color-text); font: inherit; }.config-form small { color: var(--color-muted); font-size: 12px; }.local-api-key-hint { align-self: end; margin: 0; padding: 9px 10px; border-radius: 8px; background: var(--color-surface-soft); color: var(--color-muted-strong); font-size: 13px; line-height: 1.5; }.form-wide { grid-column: 1 / -1; }.url-preview { display: block; min-height: 19px; overflow-wrap: anywhere; padding: 9px 10px; border-radius: 8px; background: var(--color-surface-soft); color: var(--color-primary-strong); }.checkbox-field { display: flex !important; align-items: center; gap: 8px; padding-top: 22px; }.checkbox-field input { width: auto; }.button { border: 1px solid var(--color-border); border-radius: 8px; padding: 9px 14px; cursor: pointer; font: inherit; }.button.primary { color: #fff; border-color: var(--color-primary); background: var(--color-primary); }.button.secondary { background: #fff; color: var(--color-text); }.button:disabled { cursor: wait; opacity: .65; }.form-actions { align-items: center; justify-content: flex-start; flex-wrap: wrap; }.summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0 0; }.summary-grid div { padding: 12px; border-radius: 8px; background: var(--color-surface-soft); }.summary-grid dt { color: var(--color-muted); font-size: 12px; }.summary-grid dd { margin: 4px 0 0; color: var(--color-text); font-size: 14px; }
 @media (max-width: 720px) { .page-header, .card-heading { display: grid; }.runtime-details { justify-content: flex-start; }.config-form, .summary-grid { grid-template-columns: 1fr; } }
 </style>

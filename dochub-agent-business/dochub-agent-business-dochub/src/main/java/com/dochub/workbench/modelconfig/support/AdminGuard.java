@@ -7,13 +7,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Resolves the request subject again from the database and permits only an enabled super administrator. */
+/** Resolves the request subject again from the database and permits only an enabled administrator. */
 @Component
-public class SuperAdminGuard {
+public class AdminGuard {
 
     private final AdminUserMapper adminUserMapper;
 
-    public SuperAdminGuard(AdminUserMapper adminUserMapper) {
+    public AdminGuard(AdminUserMapper adminUserMapper) {
         this.adminUserMapper = adminUserMapper;
     }
 
@@ -23,7 +23,7 @@ public class SuperAdminGuard {
             .last("LIMIT 1"));
         if (user == null || user.getStatus() == null || user.getStatus() != 1
             || user.getIsAdmin() == null || user.getIsAdmin() != 1) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅超级管理员可以管理模型配置");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "仅管理员可以管理模型配置");
         }
         return user;
     }

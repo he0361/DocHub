@@ -21,7 +21,7 @@ import com.dochub.workbench.modelconfig.support.ChatModelConnectionTester;
 import com.dochub.workbench.modelconfig.support.ChatModelPolicyValidator;
 import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
 import com.dochub.workbench.modelconfig.support.ModelConfigFailureAuditRecorder;
-import com.dochub.workbench.modelconfig.support.SuperAdminGuard;
+import com.dochub.workbench.modelconfig.support.AdminGuard;
 import com.dochub.workbench.modelconfig.vo.ModelConfigVo;
 import com.dochub.workbench.modelconfig.vo.ModelConnectionTestVo;
 import org.javaup.exception.DochubFrameException;
@@ -50,7 +50,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     private final ModelCredentialCipher cipher;
     private final ChatModelPolicyValidator policyValidator;
     private final ChatModelConnectionTester connectionTester;
-    private final SuperAdminGuard superAdminGuard;
+    private final AdminGuard adminGuard;
     private final ModelConfigVersionPublisher versionPublisher;
     private final ModelConfigFailureAuditRecorder failureAuditRecorder;
 
@@ -62,7 +62,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
                                   ModelCredentialCipher cipher,
                                   ChatModelPolicyValidator policyValidator,
                                   ChatModelConnectionTester connectionTester,
-                                  SuperAdminGuard superAdminGuard,
+                                  AdminGuard adminGuard,
                                   ModelConfigVersionPublisher versionPublisher,
                                   ModelConfigFailureAuditRecorder failureAuditRecorder) {
         this.configMapper = configMapper;
@@ -73,14 +73,14 @@ public class ModelConfigServiceImpl implements ModelConfigService {
         this.cipher = cipher;
         this.policyValidator = policyValidator;
         this.connectionTester = connectionTester;
-        this.superAdminGuard = superAdminGuard;
+        this.adminGuard = adminGuard;
         this.versionPublisher = versionPublisher;
         this.failureAuditRecorder = failureAuditRecorder;
     }
 
     @Override
     public ModelConfigVo queryChat(String username) {
-        AdminUserEntity operator = superAdminGuard.require(username);
+        AdminUserEntity operator = adminGuard.require(username);
         DochubAiModelConfig current = activeChat();
         audit(current, operator, "QUERY", 1, null);
         return current == null ? null : toVo(current);
@@ -88,7 +88,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
 
     @Override
     public ModelConnectionTestVo testChat(String username, ModelConfigTestDto dto) {
-        AdminUserEntity operator = superAdminGuard.require(username);
+        AdminUserEntity operator = adminGuard.require(username);
         requireCipher();
         Candidate candidate = candidate(dto, activeChat(), false);
         try {
@@ -106,7 +106,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ModelConfigVo saveChat(String username, ModelConfigSaveDto dto) {
-        AdminUserEntity operator = superAdminGuard.require(username);
+        AdminUserEntity operator = adminGuard.require(username);
         requireCipher();
         Candidate candidate = candidate(dto, activeChat(), dto != null && Boolean.TRUE.equals(dto.getClearApiKey()));
         ChatModel model = factory.chatModel(candidate.spec());
@@ -205,7 +205,7 @@ public class ModelConfigServiceImpl implements ModelConfigService {
     }
 
     private String resolveApiKey(String proposed, DochubAiModelConfig current, String deploymentType, boolean clearApiKey) {
-        if (clearApiKey) {
+        if ("LOCAL".equals(deploymentType) || clearApiKey) {
             return "";
         }
         if (proposed != null && !proposed.isBlank()) {

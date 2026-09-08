@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletRequest;
 import com.dochub.workbench.auth.support.AdminRequestContext;
-import com.dochub.workbench.modelconfig.support.SuperAdminGuard;
+import com.dochub.workbench.modelconfig.support.AdminGuard;
 import com.dochub.workbench.manage.dto.DocumentProfileBatchRegenerateDto;
 import com.dochub.workbench.manage.dto.DocumentProfileDetailQueryDto;
 import com.dochub.workbench.manage.dto.DocumentProfileRegenerateDto;
@@ -49,16 +49,16 @@ public class KnowledgeManageController {
 
     private final KnowledgeManageService knowledgeManageService;
     private final KnowledgeClassificationReviewService classificationReviewService;
-    private final SuperAdminGuard superAdminGuard;
+    private final AdminGuard adminGuard;
     private final KnowledgeScopeMergeService scopeMergeService;
 
     public KnowledgeManageController(KnowledgeManageService knowledgeManageService,
                                      KnowledgeClassificationReviewService classificationReviewService,
-                                     SuperAdminGuard superAdminGuard,
+                                     AdminGuard adminGuard,
                                      KnowledgeScopeMergeService scopeMergeService) {
         this.knowledgeManageService = knowledgeManageService;
         this.classificationReviewService = classificationReviewService;
-        this.superAdminGuard = superAdminGuard;
+        this.adminGuard = adminGuard;
         this.scopeMergeService = scopeMergeService;
     }
 
@@ -84,7 +84,7 @@ public class KnowledgeManageController {
     @PostMapping("/scope/merge")
     public ApiResponse<KnowledgeScopeMergeVo> mergeScope(HttpServletRequest request,
                                                           @Valid @RequestBody KnowledgeScopeMergeDto dto) {
-        return ApiResponse.ok(scopeMergeService.merge(requireSuperAdmin(request), dto));
+        return ApiResponse.ok(scopeMergeService.merge(requireAdmin(request), dto));
     }
 
     @Operation(summary = "保存知识主题节点")
@@ -151,7 +151,7 @@ public class KnowledgeManageController {
     @PostMapping("/classification/review/list")
     public ApiResponse<List<KnowledgeClassificationReviewVo>> listClassificationReviews(HttpServletRequest request,
                                                                                          @RequestBody(required = false) KnowledgeClassificationReviewQueryDto dto) {
-        requireSuperAdmin(request);
+        requireAdmin(request);
         return ApiResponse.ok(classificationReviewService.list(dto));
     }
 
@@ -159,7 +159,7 @@ public class KnowledgeManageController {
     @PostMapping("/classification/review/detail")
     public ApiResponse<KnowledgeClassificationReviewVo> classificationReviewDetail(HttpServletRequest request,
                                                                                      @RequestBody KnowledgeClassificationReviewQueryDto dto) {
-        requireSuperAdmin(request);
+        requireAdmin(request);
         return ApiResponse.ok(classificationReviewService.detail(dto));
     }
 
@@ -167,13 +167,13 @@ public class KnowledgeManageController {
     @PostMapping("/classification/review/resolve")
     public ApiResponse<KnowledgeClassificationReviewVo> resolveClassificationReview(HttpServletRequest request,
                                                                                      @Valid @RequestBody KnowledgeClassificationResolveDto dto) {
-        String operator = requireSuperAdmin(request);
+        String operator = requireAdmin(request);
         return ApiResponse.ok(classificationReviewService.resolve(operator, dto));
     }
 
-    private String requireSuperAdmin(HttpServletRequest request) {
+    private String requireAdmin(HttpServletRequest request) {
         String username = AdminRequestContext.resolveUsername(request);
-        superAdminGuard.require(username);
+        adminGuard.require(username);
         return username;
     }
 }

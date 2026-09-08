@@ -9,7 +9,7 @@ import com.dochub.workbench.modelconfig.dto.EmbeddingModelChangeDto;
 import com.dochub.workbench.modelconfig.dto.EmbeddingRollbackDto;
 import com.dochub.workbench.modelconfig.service.EmbeddingModelChangeService;
 import com.dochub.workbench.modelconfig.service.ModelConfigService;
-import com.dochub.workbench.modelconfig.support.SuperAdminGuard;
+import com.dochub.workbench.modelconfig.support.AdminGuard;
 import com.dochub.workbench.modelconfig.vo.ModelConfigVo;
 import com.dochub.workbench.modelconfig.vo.ModelConnectionTestVo;
 import com.dochub.workbench.modelconfig.vo.EmbeddingConfigVo;
@@ -23,79 +23,79 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Super-administrator-only model configuration routes. */
+/** Administrator-only model configuration routes. */
 @RestController
 @RequestMapping("/admin/model-config")
 public class AdminModelConfigController {
 
     private final ModelConfigService modelConfigService;
     private final EmbeddingModelChangeService embeddingModelChangeService;
-    private final SuperAdminGuard superAdminGuard;
+    private final AdminGuard adminGuard;
 
     public AdminModelConfigController(ModelConfigService modelConfigService,
                                       EmbeddingModelChangeService embeddingModelChangeService,
-                                      SuperAdminGuard superAdminGuard) {
+                                      AdminGuard adminGuard) {
         this.modelConfigService = modelConfigService;
         this.embeddingModelChangeService = embeddingModelChangeService;
-        this.superAdminGuard = superAdminGuard;
+        this.adminGuard = adminGuard;
     }
 
     @PostMapping("/query")
     public ApiResponse<ModelConfigVo> query(HttpServletRequest request) {
-        String username = requireSuperAdmin(request);
+        String username = requireAdmin(request);
         return ApiResponse.ok(modelConfigService.queryChat(username));
     }
 
     @PostMapping("/chat/test")
     public ApiResponse<ModelConnectionTestVo> test(HttpServletRequest request, @RequestBody ModelConfigTestDto dto) {
-        String username = requireSuperAdmin(request);
+        String username = requireAdmin(request);
         return ApiResponse.ok(modelConfigService.testChat(username, dto));
     }
 
     @PostMapping("/chat/save")
     public ApiResponse<ModelConfigVo> save(HttpServletRequest request, @RequestBody ModelConfigSaveDto dto) {
-        String username = requireSuperAdmin(request);
+        String username = requireAdmin(request);
         return ApiResponse.ok(modelConfigService.saveChat(username, dto));
     }
 
     @PostMapping("/embedding/query")
     public ApiResponse<EmbeddingConfigVo> queryEmbedding(HttpServletRequest request) {
-        return ApiResponse.ok(embeddingModelChangeService.query(requireSuperAdmin(request)));
+        return ApiResponse.ok(embeddingModelChangeService.query(requireAdmin(request)));
     }
 
     @PostMapping("/embedding/test")
     public ApiResponse<EmbeddingModelTestVo> testEmbedding(HttpServletRequest request,
                                                             @RequestBody EmbeddingModelChangeDto dto) {
-        return ApiResponse.ok(embeddingModelChangeService.test(requireSuperAdmin(request), dto));
+        return ApiResponse.ok(embeddingModelChangeService.test(requireAdmin(request), dto));
     }
 
     @PostMapping("/embedding/change")
     public ApiResponse<EmbeddingModelChangeVo> changeEmbedding(HttpServletRequest request,
                                                                 @RequestBody EmbeddingModelChangeDto dto) {
-        return ApiResponse.ok(embeddingModelChangeService.change(requireSuperAdmin(request), dto));
+        return ApiResponse.ok(embeddingModelChangeService.change(requireAdmin(request), dto));
     }
 
     @PostMapping("/embedding/migration/status")
     public ApiResponse<EmbeddingMigrationVo> embeddingMigrationStatus(HttpServletRequest request,
                                                                        @RequestBody(required = false) EmbeddingMigrationStatusDto dto) {
-        return ApiResponse.ok(embeddingModelChangeService.migrationStatus(requireSuperAdmin(request), dto == null ? null : dto.getMigrationId()));
+        return ApiResponse.ok(embeddingModelChangeService.migrationStatus(requireAdmin(request), dto == null ? null : dto.getMigrationId()));
     }
 
     @PostMapping("/embedding/migration/retry")
     public ApiResponse<EmbeddingMigrationVo> retryEmbeddingMigration(HttpServletRequest request,
                                                                       @RequestBody EmbeddingMigrationRetryDto dto) {
-        return ApiResponse.ok(embeddingModelChangeService.retry(requireSuperAdmin(request), dto));
+        return ApiResponse.ok(embeddingModelChangeService.retry(requireAdmin(request), dto));
     }
 
     @PostMapping("/embedding/rollback")
     public ApiResponse<EmbeddingModelChangeVo> rollbackEmbedding(HttpServletRequest request,
                                                                   @RequestBody EmbeddingRollbackDto dto) {
-        return ApiResponse.ok(embeddingModelChangeService.rollback(requireSuperAdmin(request), dto));
+        return ApiResponse.ok(embeddingModelChangeService.rollback(requireAdmin(request), dto));
     }
 
-    private String requireSuperAdmin(HttpServletRequest request) {
+    private String requireAdmin(HttpServletRequest request) {
         String username = AdminRequestContext.resolveUsername(request);
-        superAdminGuard.require(username);
+        adminGuard.require(username);
         return username;
     }
 }

@@ -203,7 +203,7 @@ git commit -m "feat: add dynamic model runtime"
 - Create: `dochub-agent-business/dochub-agent-business-dochub/src/main/java/com/dochub/workbench/modelconfig/service/ModelConfigService.java`
 - Create: `dochub-agent-business/dochub-agent-business-dochub/src/main/java/com/dochub/workbench/modelconfig/service/impl/ModelConfigServiceImpl.java`
 - Create: `dochub-agent-business/dochub-agent-business-dochub/src/main/java/com/dochub/workbench/modelconfig/controller/AdminModelConfigController.java`
-- Create: `dochub-agent-business/dochub-agent-business-dochub/src/main/java/com/dochub/workbench/modelconfig/support/SuperAdminGuard.java`
+- Create: `dochub-agent-business/dochub-agent-business-dochub/src/main/java/com/dochub/workbench/modelconfig/support/AdminGuard.java`
 - Create: `dochub-agent-business/dochub-agent-business-dochub/src/main/java/com/dochub/workbench/modelconfig/support/ChatModelPolicyValidator.java`
 - Modify: `dochub-agent-business/dochub-agent-business-dochub/src/main/java/com/dochub/workbench/auth/config/AdminWebMvcConfiguration.java`
 - Modify: `dochub-agent-business/dochub-agent-business-dochub/src/main/java/com/dochub/workbench/auth/service/AdminAuthService.java`
@@ -253,7 +253,7 @@ Expected: FAIL because service/controller APIs do not exist.
 ```java
 @Transactional
 public ModelConfigVo saveChat(String username, ModelConfigSaveDto dto) {
-    superAdminGuard.require(username);
+    adminGuard.require(username);
     ModelRuntimeSpec candidate = validator.validateAndResolve(dto, currentChatConfig());
     ChatModel model = factory.createChat(candidate);
     connectionTester.testChat(model, candidate.toolCallingSupported());
