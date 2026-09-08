@@ -33,10 +33,10 @@ public final class ModelCredentialCipher {
     }
 
     public String encrypt(String plaintext) {
-        requireKey();
         if (plaintext == null || plaintext.isBlank()) {
             return "";
         }
+        requireKey();
         try {
             byte[] iv = new byte[IV_BYTES];
             SecureRandom.getInstanceStrong().nextBytes(iv);
@@ -51,10 +51,10 @@ public final class ModelCredentialCipher {
     }
 
     public String decrypt(String value) {
-        requireKey();
         if (value == null || value.isBlank()) {
             return "";
         }
+        requireKey();
         try {
             String[] parts = value.split(":", 3);
             if (parts.length != 3 || !"v1".equals(parts[0])) {

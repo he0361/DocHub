@@ -33,4 +33,12 @@ class ModelCredentialCipherTest {
         assertThatThrownBy(() -> cipher.decrypt(tampered))
             .isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void emptyLocalCredentialDoesNotRequireAnEncryptionKey() {
+        ModelCredentialCipher withoutKey = new ModelCredentialCipher("");
+
+        assertThat(withoutKey.encrypt("")).isEmpty();
+        assertThat(withoutKey.decrypt("")).isEmpty();
+    }
 }
