@@ -31,6 +31,11 @@ spring:
       pool-name: dochub-business-dochub-hikari
       maximum-pool-size: 10
       minimum-idle: 2
+  sql:
+    init:
+      # 模型配置与向量重建表必须在 ApplicationReadyEvent 的恢复任务前存在。
+      mode: always
+      schema-locations: classpath:db/model-runtime-schema.sql
   kafka:
     bootstrap-servers: 127.0.0.1:9092
     producer:
@@ -41,6 +46,17 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
   ai:
+    # 对话与向量模型由管理员配置的动态 OpenAI 兼容运行时提供。
+    # 关闭 Spring AI 自带的静态 OpenAI Bean，避免本地模型无 API Key 时
+    # 语音、图像等未使用模块抢先创建并阻止应用启动。
+    model:
+      chat: none
+      embedding: none
+      image: none
+      moderation: none
+      audio:
+        speech: none
+        transcription: none
     openai:
       # OpenAI 兼容协议的服务入口。
       # 当前这里接的是阿里云百炼 DashScope 的兼容地址，

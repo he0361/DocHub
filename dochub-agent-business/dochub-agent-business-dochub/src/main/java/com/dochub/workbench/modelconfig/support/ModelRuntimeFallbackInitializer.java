@@ -34,6 +34,9 @@ public class ModelRuntimeFallbackInitializer {
 
     @EventListener(ApplicationReadyEvent.class)
     public void seedFallbacks() {
+        if (apiKey == null || apiKey.isBlank()) {
+            return;
+        }
         seed(ModelType.CHAT); seed(ModelType.EMBEDDING);
     }
     private void seed(ModelType type) {
