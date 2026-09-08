@@ -486,6 +486,26 @@ export const modelConfigApi = {
       method: 'POST',
       body: stringifyManageValue(payload)
     })
+  },
+
+  queryEmbedding() {
+    return requestApiEnvelope('/admin/model-config/embedding/query', { method: 'POST', body: {} })
+  },
+
+  testEmbedding(payload) {
+    return requestApiEnvelope('/admin/model-config/embedding/test', { method: 'POST', body: stringifyManageValue(payload) })
+  },
+
+  changeEmbedding(payload) {
+    return requestApiEnvelope('/admin/model-config/embedding/change', { method: 'POST', body: stringifyManageValue(payload) })
+  },
+
+  retryEmbeddingMigration(payload) {
+    return requestApiEnvelope('/admin/model-config/embedding/migration/retry', { method: 'POST', body: stringifyManageValue(payload) })
+  },
+
+  rollbackEmbedding(payload) {
+    return requestApiEnvelope('/admin/model-config/embedding/rollback', { method: 'POST', body: stringifyManageValue(payload) })
   }
 }
 

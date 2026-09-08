@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class ModelRuntimeRegistry {
 
     private final AtomicReference<ModelRuntimeSnapshot<ChatModel>> chat = new AtomicReference<>();
-    private final AtomicReference<ModelRuntimeSnapshot<EmbeddingModel>> embedding = new AtomicReference<>();
+    private final AtomicReference<EmbeddingRuntimeSnapshot> embedding = new AtomicReference<>();
 
     public void activateChat(long version, ChatModel model, ModelRuntimeSpec spec) {
         chat.set(new ModelRuntimeSnapshot<>(version, Objects.requireNonNull(model, "model must not be null"),
@@ -19,8 +19,15 @@ public final class ModelRuntimeRegistry {
     }
 
     public void activateEmbedding(long version, EmbeddingModel model, ModelRuntimeSpec spec) {
-        embedding.set(new ModelRuntimeSnapshot<>(version, Objects.requireNonNull(model, "model must not be null"),
-            Objects.requireNonNull(spec, "spec must not be null")));
+        EmbeddingRuntimeSnapshot current = embedding.get();
+        activateEmbedding(new EmbeddingRuntimeSnapshot(version, model, spec,
+            current == null ? Math.max(0, model.dimensions()) : current.dimension(),
+            current == null ? "dochub_document" : current.documentCollection(),
+            current == null ? "dochub_memory" : current.memoryCollection()));
+    }
+
+    public void activateEmbedding(EmbeddingRuntimeSnapshot snapshot) {
+        embedding.set(Objects.requireNonNull(snapshot, "snapshot must not be null"));
     }
 
     public ModelRuntimeSnapshot<ChatModel> requireChat() {
@@ -31,11 +38,15 @@ public final class ModelRuntimeRegistry {
         return snapshot;
     }
 
-    public ModelRuntimeSnapshot<EmbeddingModel> requireEmbedding() {
-        ModelRuntimeSnapshot<EmbeddingModel> snapshot = embedding.get();
+    public EmbeddingRuntimeSnapshot captureEmbedding() {
+        EmbeddingRuntimeSnapshot snapshot = embedding.get();
         if (snapshot == null) {
             throw new IllegalStateException("No active embedding model runtime snapshot");
         }
         return snapshot;
+    }
+
+    public EmbeddingRuntimeSnapshot requireEmbedding() {
+        return captureEmbedding();
     }
 }

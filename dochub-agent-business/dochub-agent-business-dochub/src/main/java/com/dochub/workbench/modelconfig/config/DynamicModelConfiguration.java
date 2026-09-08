@@ -6,6 +6,7 @@ import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import com.dochub.workbench.modelconfig.runtime.OpenAiCompatibleModelFactory;
 import com.dochub.workbench.modelconfig.security.ModelCredentialCipher;
 import com.dochub.workbench.modelconfig.support.ChatModelConnectionTester;
+import com.dochub.workbench.modelconfig.support.EmbeddingCandidateProbe;
 import com.dochub.workbench.modelconfig.support.ModelConfigRuntimeReloader;
 import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
 import org.springframework.ai.chat.model.ChatModel;
@@ -47,6 +48,11 @@ public class DynamicModelConfiguration {
     @Bean
     public ChatModelConnectionTester chatModelConnectionTester() {
         return ChatModelConnectionTester.defaultTester();
+    }
+
+    @Bean
+    public EmbeddingCandidateProbe embeddingCandidateProbe(OpenAiCompatibleModelFactory factory) {
+        return new EmbeddingCandidateProbe(factory);
     }
 
     @Bean

@@ -23,9 +23,10 @@ import com.dochub.workbench.manage.model.route.ScopeRouteCandidate;
 import com.dochub.workbench.manage.model.route.TopicRouteCandidate;
 import com.dochub.workbench.manage.service.KnowledgeRouteIndexService;
 import com.dochub.workbench.manage.service.KnowledgeRouteService;
+import com.dochub.workbench.modelconfig.runtime.EmbeddingRuntimeSnapshot;
+import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import org.javaup.enums.BusinessStatus;
 import org.javaup.enums.DocumentIndexStatusEnum;
-import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -78,7 +79,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
     private final DochubKnowledgeTopicNodeMapper topicNodeMapper;
     private final DochubTopicDocumentRelationMapper topicDocumentRelationMapper;
     private final DochubKnowledgeRouteTraceMapper knowledgeRouteTraceMapper;
-    private final ObjectProvider<EmbeddingModel> embeddingModelProvider;
+    private final ModelRuntimeRegistry modelRuntimeRegistry;
     private final ObjectProvider<KnowledgeRouteIndexService> knowledgeRouteIndexServiceProvider;
     private final UidGenerator uidGenerator;
 
@@ -463,13 +464,21 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
     private RouteQueryContext buildQueryContext(String question, String rewriteQuestion) {
         String routingText = buildRoutingText(question, rewriteQuestion);
         List<String> queryTerms = tokenize(routingText);
-        float[] queryEmbedding = embedSingle(routingText);
+        EmbeddingRuntimeSnapshot embeddingRuntime;
+        try {
+            embeddingRuntime = modelRuntimeRegistry.captureEmbedding();
+        }
+        catch (IllegalStateException exception) {
+            embeddingRuntime = null;
+        }
+        float[] queryEmbedding = embedSingle(embeddingRuntime, routingText);
         return new RouteQueryContext(
             StrUtil.blankToDefault(question, ""),
             StrUtil.blankToDefault(rewriteQuestion, ""),
             routingText,
             queryTerms,
-            queryEmbedding
+            queryEmbedding,
+            embeddingRuntime
         );
     }
 
@@ -671,16 +680,12 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
         return normalize(value).replaceAll("[^a-z0-9]+", "_");
     }
 
-    private float[] embedSingle(String text) {
-        if (StrUtil.isBlank(text)) {
-            return null;
-        }
-        EmbeddingModel embeddingModel = embeddingModelProvider.getIfAvailable();
-        if (embeddingModel == null) {
+    private float[] embedSingle(EmbeddingRuntimeSnapshot runtime, String text) {
+        if (runtime == null || StrUtil.isBlank(text)) {
             return null;
         }
         try {
-            return embeddingModel.embed(text.trim());
+            return runtime.model().embed(text.trim());
         }
         catch (Exception exception) {
             log.warn("知识路由生成问题向量失败，退回词面匹配: text='{}'", StrUtil.maxLength(text, 120), exception);
@@ -692,8 +697,8 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
         if (!queryContext.semanticEnabled() || routeTexts == null || routeTexts.isEmpty()) {
             return routeTexts == null ? List.of() : routeTexts.stream().map(item -> 0D).toList();
         }
-        EmbeddingModel embeddingModel = embeddingModelProvider.getIfAvailable();
-        if (embeddingModel == null) {
+        EmbeddingRuntimeSnapshot runtime = queryContext.embeddingRuntime();
+        if (runtime == null) {
             return routeTexts.stream().map(item -> 0D).toList();
         }
         try {
@@ -711,7 +716,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
                 int currentBatchIndex = (startIndex / ROUTE_EMBEDDING_BATCH_SIZE) + 1;
                 log.debug("知识路由候选向量分批计算: batchIndex={}/{}, candidateRange=[{}, {}], batchSize={}",
                     currentBatchIndex, totalBatchCount, startIndex + 1, endIndex, currentBatch.size());
-                List<float[]> embeddings = embeddingModel.embed(currentBatch);
+                List<float[]> embeddings = runtime.model().embed(currentBatch);
                 if (embeddings == null || embeddings.size() != currentBatch.size()) {
                     return routeTexts.stream().map(item -> 0D).toList();
                 }
@@ -731,7 +736,7 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
         if (!queryContext.semanticEnabled()) {
             return 0D;
         }
-        float[] routeEmbedding = embedSingle(routeText);
+        float[] routeEmbedding = embedSingle(queryContext.embeddingRuntime(), routeText);
         if (routeEmbedding == null) {
             return 0D;
         }
@@ -894,7 +899,8 @@ public class KnowledgeRouteServiceImpl implements KnowledgeRouteService {
                                      String rewriteQuestion,
                                      String routingText,
                                      List<String> queryTerms,
-                                     float[] queryEmbedding) {
+                                     float[] queryEmbedding,
+                                     EmbeddingRuntimeSnapshot embeddingRuntime) {
         private boolean semanticEnabled() {
             return queryEmbedding != null && queryEmbedding.length > 0;
         }

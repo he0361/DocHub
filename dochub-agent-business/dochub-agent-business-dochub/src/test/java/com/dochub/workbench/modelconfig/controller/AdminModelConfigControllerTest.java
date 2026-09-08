@@ -4,6 +4,7 @@ import com.dochub.workbench.auth.data.AdminUserEntity;
 import com.dochub.workbench.auth.mapper.AdminUserMapper;
 import com.dochub.workbench.auth.support.AdminRequestContext;
 import com.dochub.workbench.modelconfig.service.ModelConfigService;
+import com.dochub.workbench.modelconfig.service.EmbeddingModelChangeService;
 import com.dochub.workbench.modelconfig.support.SuperAdminGuard;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -25,7 +26,8 @@ class AdminModelConfigControllerTest {
         operator.setIsAdmin(0);
         when(mapper.selectOne(any())).thenReturn(operator);
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(
-            new AdminModelConfigController(mock(ModelConfigService.class), new SuperAdminGuard(mapper))).build();
+            new AdminModelConfigController(mock(ModelConfigService.class), mock(EmbeddingModelChangeService.class),
+                new SuperAdminGuard(mapper))).build();
 
         mockMvc.perform(post("/admin/model-config/query")
                 .contentType(MediaType.APPLICATION_JSON)
