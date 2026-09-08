@@ -5,6 +5,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.EmbeddingModel;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Atomically publishes immutable chat and embedding runtime snapshots. */
@@ -31,11 +32,12 @@ public final class ModelRuntimeRegistry {
     }
 
     public ModelRuntimeSnapshot<ChatModel> requireChat() {
-        ModelRuntimeSnapshot<ChatModel> snapshot = chat.get();
-        if (snapshot == null) {
-            throw new IllegalStateException("No active chat model runtime snapshot");
-        }
-        return snapshot;
+        return captureChat().orElseThrow(() -> new IllegalStateException("No active chat model runtime snapshot"));
+    }
+
+    /** Returns the active chat snapshot when one has been configured. */
+    public Optional<ModelRuntimeSnapshot<ChatModel>> captureChat() {
+        return Optional.ofNullable(chat.get());
     }
 
     public EmbeddingRuntimeSnapshot captureEmbedding() {

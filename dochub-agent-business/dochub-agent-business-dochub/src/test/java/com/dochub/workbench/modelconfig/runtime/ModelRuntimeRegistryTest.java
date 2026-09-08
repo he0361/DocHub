@@ -3,11 +3,13 @@ package com.dochub.workbench.modelconfig.runtime;
 import com.dochub.workbench.modelconfig.model.CompatibilityPreset;
 import com.dochub.workbench.modelconfig.model.ModelRuntimeSpec;
 import com.dochub.workbench.modelconfig.model.ModelType;
+import com.alibaba.cloud.ai.graph.agent.ReactAgent;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.Embedding;
@@ -22,6 +24,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ModelRuntimeRegistryTest {
@@ -45,6 +48,23 @@ class ModelRuntimeRegistryTest {
         assertThatThrownBy(registry::requireChat)
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("chat");
+    }
+
+    @Test
+    void defaultOptionsCanBeReadBeforeAChatModelIsConfigured() {
+        ChatOptions options = new DynamicChatModel(new ModelRuntimeRegistry()).getDefaultOptions();
+
+        assertThat(options).isInstanceOf(OpenAiChatOptions.class);
+    }
+
+    @Test
+    void reactAgentCanBeCreatedBeforeAChatModelIsConfigured() {
+        assertThatCode(() -> ReactAgent.builder()
+            .name("startup-safe-agent")
+            .model(new DynamicChatModel(new ModelRuntimeRegistry()))
+            .instruction("test")
+            .build())
+            .doesNotThrowAnyException();
     }
 
     @Test

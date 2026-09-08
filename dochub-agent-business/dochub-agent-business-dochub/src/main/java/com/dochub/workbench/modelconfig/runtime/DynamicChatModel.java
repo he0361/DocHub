@@ -35,7 +35,13 @@ public final class DynamicChatModel implements ChatModel {
 
     @Override
     public ChatOptions getDefaultOptions() {
-        return registry.requireChat().model().getDefaultOptions();
+        // Agent construction asks for options before ApplicationReadyEvent-based
+        // configuration activation. An empty OpenAI-compatible option set keeps
+        // the management application available until an administrator configures
+        // a model; actual chat invocations still require an active snapshot.
+        return registry.captureChat()
+            .map(snapshot -> snapshot.model().getDefaultOptions())
+            .orElseGet(() -> OpenAiChatOptions.builder().build());
     }
 
     private Prompt sanitize(Prompt prompt, CompatibilityPreset preset) {
