@@ -66,7 +66,11 @@ public class EmbeddingMigrationServiceImpl implements EmbeddingMigrationService 
         });
     }
 
-    @Override public void retry(Long migrationId) {
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void retry(Long migrationId) {
+        mapper.lockMigrationSlot();
+        if (mapper.countActive() > 0) throw new DochubFrameException(409, "已有向量模型重建任务正在运行");
         DochubEmbeddingModelMigration job = mapper.selectById(migrationId);
         if (job == null || !EmbeddingMigrationStatus.FAILED.name().equals(job.getMigrationStatus())) {
             throw new DochubFrameException(409, "仅失败的向量迁移任务可以重试");

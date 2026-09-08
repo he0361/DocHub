@@ -115,6 +115,10 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
         requireChangeDto(dto);
         confirmationGuard.verify(username, dto.getCurrentPassword(), dto.getConfirmationPhrase());
         AdminUserEntity operator = superAdminGuard.require(username);
+        migrationMapper.lockMigrationSlot();
+        if (migrationMapper.countActive() > 0) {
+            throw new DochubFrameException(409, "已有向量模型重建任务正在运行，请等待完成或失败后再更改配置");
+        }
         DochubAiModelConfig current = activeConfig();
         Candidate candidate = candidate(dto, current);
         EmbeddingCandidateProbe.Result probed = probe.test(candidate.spec());
@@ -155,8 +159,12 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     public EmbeddingMigrationVo retry(String username, EmbeddingMigrationRetryDto dto) {
         if (dto == null || dto.getMigrationId() == null) throw new DochubFrameException(400, "migrationId 不能为空");
         confirmationGuard.verify(username, dto.getCurrentPassword(), dto.getConfirmationPhrase());
+        AdminUserEntity operator = superAdminGuard.require(username);
         migrations.retry(dto.getMigrationId());
-        return EmbeddingMigrationVo.from(migrations.find(dto.getMigrationId()));
+        DochubEmbeddingModelMigration job = migrations.find(dto.getMigrationId());
+        DochubAiModelConfig config = configByVersion(job == null ? null : job.getTargetConfigVersion());
+        audit(config, operator.getId(), "RETRY_REBUILD", 1, null);
+        return EmbeddingMigrationVo.from(job);
     }
 
     @Override
@@ -165,10 +173,10 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
         if (dto == null || dto.getConfigVersion() == null) throw new DochubFrameException(400, "configVersion 不能为空");
         confirmationGuard.verify(username, dto.getCurrentPassword(), dto.getConfirmationPhrase());
         AdminUserEntity operator = superAdminGuard.require(username);
-        DochubAiModelConfig config = configMapper.selectOne(new LambdaQueryWrapper<DochubAiModelConfig>()
-            .eq(DochubAiModelConfig::getModelType, ModelType.EMBEDDING.name())
-            .eq(DochubAiModelConfig::getConfigVersion, dto.getConfigVersion())
-            .eq(DochubAiModelConfig::getStatus, 1).last("LIMIT 1"));
+        if (migrations.current() != null) {
+            throw new DochubFrameException(409, "向量模型重建期间不能回滚，请等待任务结束或失败");
+        }
+        DochubAiModelConfig config = configByVersion(dto.getConfigVersion());
         if (config == null) throw new DochubFrameException(404, "回滚目标向量配置不存在");
         EmbeddingRuntimeMetadata metadata = EmbeddingRuntimeMetadata.fromJson(objectMapper, config.getOptionsJson());
         ModelRuntimeSpec spec = spec(config, cipher.decrypt(config.getEncryptedApiKey()));
@@ -231,6 +239,14 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
         return configMapper.selectOne(new LambdaQueryWrapper<DochubAiModelConfig>()
             .eq(DochubAiModelConfig::getModelType, ModelType.EMBEDDING.name())
             .eq(DochubAiModelConfig::getActive, 1).eq(DochubAiModelConfig::getStatus, 1).last("LIMIT 1"));
+    }
+
+    private DochubAiModelConfig configByVersion(Long version) {
+        if (version == null) return null;
+        return configMapper.selectOne(new LambdaQueryWrapper<DochubAiModelConfig>()
+            .eq(DochubAiModelConfig::getModelType, ModelType.EMBEDDING.name())
+            .eq(DochubAiModelConfig::getConfigVersion, version)
+            .eq(DochubAiModelConfig::getStatus, 1).last("LIMIT 1"));
     }
 
     private long nextVersion() {
