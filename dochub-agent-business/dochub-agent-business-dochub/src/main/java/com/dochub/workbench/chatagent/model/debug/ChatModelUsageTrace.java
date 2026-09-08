@@ -34,4 +34,6 @@ public class ChatModelUsageTrace {
     private Long durationMs;
 
     private String status;
+
+    private Long modelConfigVersion;
 }

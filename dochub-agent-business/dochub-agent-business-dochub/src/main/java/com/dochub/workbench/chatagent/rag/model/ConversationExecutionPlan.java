@@ -25,6 +25,8 @@ public class ConversationExecutionPlan {
 
     private ExecutionMode mode;
 
+    private String routeReason;
+
     private ChatQueryMode chatMode;
 
     private String originalQuestion;

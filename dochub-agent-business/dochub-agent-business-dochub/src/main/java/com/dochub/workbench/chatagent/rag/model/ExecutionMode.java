@@ -8,6 +8,9 @@ package com.dochub.workbench.chatagent.rag.model;
 
 public enum ExecutionMode {
 
+    /** One provider streaming request with no routing model, planner, agent, or tools. */
+    DIRECT_CHAT,
+
     /**
      * 结构图直答模式。
      *

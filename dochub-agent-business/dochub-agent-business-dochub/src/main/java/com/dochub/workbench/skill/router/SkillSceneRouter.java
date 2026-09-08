@@ -25,12 +25,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.Comparator;
 
 /**
  * 文枢 DocHub 技能场景路由器。
  *
- * <p>优先用 LLM 根据「提问 + 各已启用技能描述」精确选技能（生产级）；
- * LLM 不可用/关闭时回退到标签关键词 + bigram 打分。命中的技能挂到执行计划上。</p>
+ * <p>先做廉价的确定性规则打分；只在两个以上候选落入歧义带时调用 LLM。</p>
  */
 @Slf4j
 @Component
@@ -71,14 +71,32 @@ public class SkillSceneRouter {
         if (skills.isEmpty()) {
             return null;
         }
-        // 优先 LLM 精确选技能；失败或未启用则回退规则打分
-        if (properties.isLlmRouterEnabled()) {
-            SkillMatchResult llmMatch = routeByLlm(question, skills);
+        List<ScoredSkill> candidates = skills.stream()
+            .map(skill -> new ScoredSkill(skill, score(question, skill)))
+            .filter(candidate -> candidate.score() >= properties.getMinimumRuleScore())
+            .sorted(Comparator.comparingDouble(ScoredSkill::score).reversed())
+            .toList();
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        ScoredSkill top = candidates.get(0);
+        boolean separated = candidates.size() == 1
+            || top.score() - candidates.get(1).score() > properties.getAmbiguityGap();
+        if (top.score() >= properties.getStrongRuleThreshold() && separated) {
+            return toRuleMatch(top, "RULE_STRONG");
+        }
+        boolean ambiguous = candidates.size() >= 2
+            && top.score() - candidates.get(1).score() <= properties.getAmbiguityGap();
+        if (properties.isLlmRouterEnabled() && ambiguous) {
+            SkillMatchResult llmMatch = routeByLlm(
+                question,
+                candidates.stream().limit(3).map(ScoredSkill::skill).toList()
+            );
             if (llmMatch != null) {
                 return llmMatch;
             }
         }
-        return routeByScore(question, skills);
+        return toRuleMatch(top, "RULE_FALLBACK");
     }
 
     private SkillMatchResult routeByScore(String question, List<SkillDefinition> skills) {
@@ -95,6 +113,15 @@ public class SkillSceneRouter {
         best.setReason("命中了技能「" + displayName(best.getSkill()) + "」的适用场景（分数 " + String.format("%.2f", best.getScore()) + "）");
         log.info("技能规则路由命中: question={}, skill={}, score={}", question, best.getSkill().getName(), best.getScore());
         return best;
+    }
+
+    private SkillMatchResult toRuleMatch(ScoredSkill candidate, String source) {
+        SkillMatchResult match = new SkillMatchResult(candidate.skill(), candidate.score(),
+            source + " 命中技能「" + displayName(candidate.skill()) + "」（分数 "
+                + String.format("%.2f", candidate.score()) + "）");
+        log.info("技能规则路由命中: skill={}, score={}, source={}",
+            candidate.skill().getName(), candidate.score(), source);
+        return match;
     }
 
     /** LLM 精确选技能：返回最合适的一个，都不合适返回 null。 */
@@ -118,7 +145,10 @@ public class SkillSceneRouter {
             if (StrUtil.isBlank(skillName) || "none".equalsIgnoreCase(skillName)) {
                 return null;
             }
-            SkillDefinition skill = registry.get(skillName);
+            SkillDefinition skill = skills.stream()
+                .filter(candidate -> candidate.getName().equals(skillName))
+                .findFirst()
+                .orElse(null);
             if (skill == null) {
                 log.warn("技能 LLM 路由返回的技能名不存在: {}", skillName);
                 return null;
@@ -234,7 +264,7 @@ public class SkillSceneRouter {
         if (hits == 0) {
             return 0D;
         }
-        return 0.5D + Math.min(hits, 3) * 0.1D;
+        return 0.65D + Math.min(hits, 3) * 0.1D;
     }
 
     private Set<String> bigrams(String text) {
@@ -254,5 +284,8 @@ public class SkillSceneRouter {
 
     private String displayName(SkillDefinition skill) {
         return StrUtil.isNotBlank(skill.getDisplayName()) ? skill.getDisplayName() : skill.getName();
+    }
+
+    private record ScoredSkill(SkillDefinition skill, double score) {
     }
 }

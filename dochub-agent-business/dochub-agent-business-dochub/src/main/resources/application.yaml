@@ -113,6 +113,12 @@ app:
     # 生成推荐问题时，最多回看最近多少轮历史问答。
     # 数值越大，上下文越完整，但推荐问题生成的提示词也会更长。
     history-preview-turns: 4
+    # 普通开放问答只带最近完成轮次与已有摘要，避免长会话持续放大首字延迟。
+    direct-chat-recent-turns: 6
+    direct-chat-max-characters: 12000
+    # ReAct/计划执行每一轮使用独立 Graph 线程，只注入有限业务历史。
+    agent-recent-turns: 4
+    agent-seed-max-characters: 8000
     # 主对话助手的系统提示词。
     # ReactAgent 每次对话都会带上这段指令，用来约束回答风格、工具使用策略和安全边界。
     system-prompt: |
@@ -368,8 +374,11 @@ app:
       built-in-dir: skills
       # 场景路由命中阈值（bigram Jaccard 分数）。
       match-threshold: 0.12
-      # 是否用 LLM 精确选技能（优先）；关闭或 LLM 失败时回退标签关键词+bigram 打分。
+      # 规则先行；只有多个规则候选分数接近时才调用 LLM 消歧。
       llm-router-enabled: true
+      minimum-rule-score: 0.45
+      strong-rule-threshold: 0.82
+      ambiguity-gap: 0.10
     qdrant:
       # 向量数据库 Qdrant 配置。
       host: 127.0.0.1
