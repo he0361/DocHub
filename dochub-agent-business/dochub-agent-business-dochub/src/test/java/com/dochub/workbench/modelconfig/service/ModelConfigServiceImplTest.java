@@ -18,6 +18,7 @@ import com.dochub.workbench.modelconfig.support.ChatModelPolicyValidator;
 import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
 import com.dochub.workbench.modelconfig.support.AdminGuard;
 import com.dochub.workbench.modelconfig.support.ModelConfigFailureAuditRecorder;
+import org.javaup.exception.DochubFrameException;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
 
@@ -118,6 +119,25 @@ class ModelConfigServiceImplTest {
         assertThatThrownBy(() -> service.saveChat("admin", dto()))
             .hasMessageContaining("连接测试失败");
         assertThat(registry.requireChat().version()).isEqualTo(7L);
+        verify(configMapper, never()).insert(any(DochubAiModelConfig.class));
+    }
+
+    @Test
+    void remoteChatSaveWithoutEncryptionKeyIsRejectedBeforePersist() {
+        DochubAiModelConfigMapper configMapper = mock(DochubAiModelConfigMapper.class);
+        AdminGuard adminGuard = mock(AdminGuard.class);
+        com.dochub.workbench.auth.data.AdminUserEntity administrator = new com.dochub.workbench.auth.data.AdminUserEntity();
+        administrator.setId(1L);
+        when(adminGuard.require("admin")).thenReturn(administrator);
+        ModelConfigServiceImpl service = new ModelConfigServiceImpl(configMapper,
+            mock(DochubAiModelConfigAuditMapper.class), mock(UidGenerator.class), new ModelRuntimeRegistry(),
+            new ChatModelProviderRouter(java.util.List.of()), new ModelCredentialCipher(""),
+            new ChatModelPolicyValidator(), adminGuard, mock(ModelConfigVersionPublisher.class),
+            mock(ModelConfigFailureAuditRecorder.class));
+
+        assertThatThrownBy(() -> service.saveChat("admin", dto()))
+            .isInstanceOf(DochubFrameException.class)
+            .hasMessageContaining("DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY");
         verify(configMapper, never()).insert(any(DochubAiModelConfig.class));
     }
 
