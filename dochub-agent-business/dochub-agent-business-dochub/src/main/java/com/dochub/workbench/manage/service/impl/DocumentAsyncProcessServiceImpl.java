@@ -161,8 +161,15 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
             );
             int structureNodeCount = structureNodes.size();
             syncNavigationArtifacts(documentId, taskId, structureNodes);
-            documentProfileService.generateProfile(documentId, analysisResult, structureNodes);
-            // Classification (scope/topic decision) runs inside generateProfile and updates the row.
+            try {
+                documentProfileService.generateProfile(documentId, analysisResult, structureNodes);
+            } catch (Exception classificationFailure) {
+                // Profile/knowledge classification is advisory for ingest: a model or decision error
+                // must not fail the whole parse. The document stays unclassified and can be
+                // re-classified later (重新生成画像), keeping parse/strategy/index usable.
+                log.warn("文档画像/知识分类未完成，解析继续: documentId={}", documentId, classificationFailure);
+            }
+            // Classification (scope/topic decision) may run inside generateProfile and update the row.
             // Reload so the final persist below cannot clobber classification_status back to
             // UNCLASSIFIED from the entity captured before classification ran.
             document = documentMapper.selectById(documentId);

@@ -45,9 +45,11 @@ public class KnowledgeClassificationDecisionApplierImpl implements KnowledgeClas
         DochubKnowledgeScopeNode scope = scopeMapper.selectOne(new LambdaQueryWrapper<DochubKnowledgeScopeNode>()
             .eq(DochubKnowledgeScopeNode::getScopeCode, code).eq(DochubKnowledgeScopeNode::getStatus, BusinessStatus.YES.getCode()).last("LIMIT 1"));
         if (scope == null) throw new IllegalArgumentException("选择的知识域不存在: " + code);
-        String topicCode = result.proposal() == null ? "" : result.proposal().topicCode();
-        DochubKnowledgeTopicNode topic = findTopic(scope.getScopeCode(), topicCode);
-        if (StrUtil.isNotBlank(topicCode) && topic == null) throw new IllegalArgumentException("选择的主题不存在或不属于知识域: " + topicCode);
+        // The scope match is authoritative. A proposed topic that does not exist under the scope
+        // (the model can echo the scope code as the topic) must not fail ingest: fall back to
+        // attaching the document to the scope without a topic, which the operator can refine later.
+        String topicCode = result.proposal() == null ? "" : StrUtil.blankToDefault(result.proposal().topicCode(), "");
+        DochubKnowledgeTopicNode topic = StrUtil.isBlank(topicCode) ? null : findTopic(scope.getScopeCode(), topicCode);
         return new AppliedRoute(scope.getScopeCode(), scope.getScopeName(), topic == null ? "" : topic.getTopicCode(), topic == null ? "" : topic.getTopicName());
     }
 
