@@ -17,7 +17,6 @@ import com.dochub.workbench.modelconfig.support.ModelConfigRuntimeReloader;
 import com.dochub.workbench.modelconfig.support.ModelConfigVersionPublisher;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -33,11 +32,6 @@ import java.util.List;
 public class DynamicModelConfiguration {
 
     @Bean
-    public ApplicationRunner modelConfigPropertyValidator(ModelConfigProperties properties, Environment environment) {
-        return arguments -> properties.validate(environment.acceptsProfiles(Profiles.of("prod", "production")));
-    }
-
-    @Bean
     public ModelRuntimeRegistry modelRuntimeRegistry() {
         return new ModelRuntimeRegistry();
     }
@@ -47,8 +41,15 @@ public class DynamicModelConfiguration {
         return new OpenAiCompatibleModelFactory();
     }
 
+    /**
+     * Provisions the credential key at bean-creation time: a production process without an
+     * environment-provided key fails startup here, while development auto-generates and
+     * persists a reusable key (see {@link ModelConfigProperties#validate(boolean)}).
+     */
     @Bean
-    public ModelCredentialCipher modelCredentialCipher(ModelConfigProperties properties) {
+    public ModelCredentialCipher modelCredentialCipher(ModelConfigProperties properties, Environment environment) {
+        boolean production = environment.acceptsProfiles(Profiles.of("prod", "production"));
+        properties.validate(production);
         return new ModelCredentialCipher(properties.getEncryptionKey());
     }
 

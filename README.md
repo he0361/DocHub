@@ -104,7 +104,7 @@ docker compose -f docker-compose-dochub.yml up -d
 
 ### 3. 配置模型服务
 
-模型地址在 `dochub-agent-business/dochub-agent-business-dochub/src/main/resources/application.yaml` 中配置；密钥必须由部署环境提供。开发环境可不设置远程模型密钥，待管理员保存首个数据库运行时配置前会继续使用 YAML 地址作为回退。
+模型地址在 `dochub-agent-business/dochub-agent-business-dochub/src/main/resources/application.yaml` 中配置。远程模型凭证加密所用主密钥：生产环境必须由部署环境提供；非 `prod`/`production` profile 首次启动会在 `<user.home>/.dochub/model-config-encryption.key` 自动生成并复用一把 32 字节 AES 密钥，因此本机可直接把模型 API Key 加密落库、重启后仍能解密（该文件属于开发者本机密钥，勿提交仓库、勿作为生产主密钥）。开发环境可不设置远程模型密钥，待管理员保存首个数据库运行时配置前会继续使用 YAML 地址作为回退。
 
 ```powershell
 # 远程 DashScope/OpenAI-compatible chat model
@@ -115,6 +115,8 @@ $env:TAVILY_API_KEY = '<provider-issued-key>'
 # Required when running with the prod or production Spring profile. Use an independently managed Base64 32-byte AES key.
 $env:DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY = '<base64-encoded-32-byte-key>'
 ```
+
+> 运行在 `prod`/`production` profile 时未设置 `DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY` 会在启动阶段直接失败（这是有意的安全护栏），不要依赖上面提到的开发自动生成文件。
 
 > ⚠️ 历史提交中曾暴露的凭证必须立即在对应服务商处轮换；从仓库中删除明文并不能使旧凭证失效。不要将新凭证提交到代码仓库。
 
