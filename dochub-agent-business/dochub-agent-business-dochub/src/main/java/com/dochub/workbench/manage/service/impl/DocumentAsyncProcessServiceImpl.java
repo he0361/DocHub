@@ -162,6 +162,13 @@ public class DocumentAsyncProcessServiceImpl implements DocumentAsyncProcessServ
             int structureNodeCount = structureNodes.size();
             syncNavigationArtifacts(documentId, taskId, structureNodes);
             documentProfileService.generateProfile(documentId, analysisResult, structureNodes);
+            // Classification (scope/topic decision) runs inside generateProfile and updates the row.
+            // Reload so the final persist below cannot clobber classification_status back to
+            // UNCLASSIFIED from the entity captured before classification ran.
+            document = documentMapper.selectById(documentId);
+            if (document == null) {
+                throw new IllegalStateException("解析后文档不存在: " + documentId);
+            }
 
             taskLogService.saveLog(taskId, documentId,
                 DocumentTaskStageEnum.CONTENT_PARSE.getCode(),
