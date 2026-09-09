@@ -30,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class EmbeddingModelChangeServiceTest {
@@ -84,6 +85,97 @@ class EmbeddingModelChangeServiceTest {
         service.test("admin", local);
 
         assertThat(captured.get().apiKey()).isEmpty();
+    }
+
+    @Test
+    void firstEmbeddingCandidateTestSucceedsWithoutAnActiveRuntime() {
+        DochubAiModelConfigMapper configMapper = mock(DochubAiModelConfigMapper.class);
+        DochubAiModelConfigAuditMapper auditMapper = mock(DochubAiModelConfigAuditMapper.class);
+        AdminGuard adminGuard = mock(AdminGuard.class);
+        AdminUserEntity administrator = new AdminUserEntity();
+        administrator.setId(1L);
+        when(adminGuard.require("admin")).thenReturn(administrator);
+        EmbeddingCandidateProbe probe = mock(EmbeddingCandidateProbe.class);
+        EmbeddingModel embeddingModel = mock(EmbeddingModel.class);
+        when(probe.test(org.mockito.ArgumentMatchers.any())).thenReturn(
+            new EmbeddingCandidateProbe.Result(embeddingModel, 1024));
+        EmbeddingModelChangeServiceImpl service = new EmbeddingModelChangeServiceImpl(configMapper, auditMapper,
+            mock(DochubEmbeddingModelMigrationMapper.class), mock(UidGenerator.class),
+            new ModelCredentialCipher(Base64.getEncoder().encodeToString(new byte[32])),
+            new ModelRuntimeRegistry(), probe, mock(EmbeddingMigrationService.class),
+            mock(EmbeddingRuntimeActivator.class), mock(EmbeddingChangeConfirmationGuard.class), adminGuard,
+            mock(QdrantVectorStore.class), new ObjectMapper());
+        EmbeddingModelChangeDto remote = new EmbeddingModelChangeDto();
+        remote.setDeploymentType("REMOTE");
+        remote.setCompatibilityPreset("DASHSCOPE");
+        remote.setBaseUrl("https://dashscope.aliyuncs.com/compatible-mode");
+        remote.setRequestPath("/v1/embeddings");
+        remote.setModelName("text-embedding-v4");
+        remote.setApiKey("test-key");
+
+        var result = service.test("admin", remote);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.dimension()).isEqualTo(1024);
+        assertThat(result.changeMode()).isEqualTo("BLUE_GREEN_REBUILD");
+        verify(auditMapper).insert(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void remoteEmbeddingCandidateExplainsMissingCredentialEncryptionKey() {
+        DochubAiModelConfigMapper configMapper = mock(DochubAiModelConfigMapper.class);
+        AdminGuard adminGuard = mock(AdminGuard.class);
+        AdminUserEntity administrator = new AdminUserEntity();
+        administrator.setId(1L);
+        when(adminGuard.require("admin")).thenReturn(administrator);
+        EmbeddingModelChangeServiceImpl service = new EmbeddingModelChangeServiceImpl(configMapper,
+            mock(DochubAiModelConfigAuditMapper.class), mock(DochubEmbeddingModelMigrationMapper.class),
+            mock(UidGenerator.class), new ModelCredentialCipher(""), new ModelRuntimeRegistry(),
+            mock(EmbeddingCandidateProbe.class), mock(EmbeddingMigrationService.class),
+            mock(EmbeddingRuntimeActivator.class), mock(EmbeddingChangeConfirmationGuard.class), adminGuard,
+            mock(QdrantVectorStore.class), new ObjectMapper());
+        EmbeddingModelChangeDto remote = new EmbeddingModelChangeDto();
+        remote.setDeploymentType("REMOTE");
+        remote.setCompatibilityPreset("DASHSCOPE");
+        remote.setBaseUrl("https://dashscope.aliyuncs.com/compatible-mode");
+        remote.setRequestPath("/v1/embeddings");
+        remote.setModelName("text-embedding-v4");
+        remote.setApiKey("test-key");
+
+        assertThatThrownBy(() -> service.test("admin", remote))
+            .hasMessageContaining("DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY");
+    }
+
+    @Test
+    void queryShowsLatestPendingCandidateBeforeFirstRuntimeIsActivated() {
+        DochubAiModelConfigMapper configMapper = mock(DochubAiModelConfigMapper.class);
+        DochubAiModelConfig pending = new DochubAiModelConfig();
+        pending.setDeploymentType("REMOTE");
+        pending.setCompatibilityPreset("DASHSCOPE");
+        pending.setBaseUrl("https://dashscope.aliyuncs.com/compatible-mode");
+        pending.setRequestPath("/v1/embeddings");
+        pending.setModelName("text-embedding-v4");
+        pending.setTimeoutMillis(30_000);
+        pending.setConfigVersion(1L);
+        pending.setEncryptedApiKey("encrypted-key");
+        when(configMapper.selectOne(org.mockito.ArgumentMatchers.any())).thenReturn(null, pending);
+        AdminGuard adminGuard = mock(AdminGuard.class);
+        AdminUserEntity administrator = new AdminUserEntity();
+        administrator.setId(1L);
+        when(adminGuard.require("admin")).thenReturn(administrator);
+        EmbeddingModelChangeServiceImpl service = new EmbeddingModelChangeServiceImpl(configMapper,
+            mock(DochubAiModelConfigAuditMapper.class), mock(DochubEmbeddingModelMigrationMapper.class),
+            mock(UidGenerator.class), new ModelCredentialCipher(""), new ModelRuntimeRegistry(),
+            mock(EmbeddingCandidateProbe.class), mock(EmbeddingMigrationService.class),
+            mock(EmbeddingRuntimeActivator.class), mock(EmbeddingChangeConfirmationGuard.class), adminGuard,
+            mock(QdrantVectorStore.class), new ObjectMapper());
+
+        var result = service.query("admin");
+
+        assertThat(result.configured()).isFalse();
+        assertThat(result.configVersion()).isEqualTo(1L);
+        assertThat(result.modelName()).isEqualTo("text-embedding-v4");
+        assertThat(result.hasApiKey()).isTrue();
     }
 
     @Test

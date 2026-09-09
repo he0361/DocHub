@@ -162,7 +162,8 @@ public class ModelConfigServiceImpl implements ModelConfigService {
 
     private void requireCipherForRemote(String deploymentType) {
         if ("REMOTE".equals(deploymentType) && !cipher.isAvailable()) {
-            throw new DochubFrameException(400, "模型配置加密密钥未配置");
+            throw new DochubFrameException(400,
+                "远程模型凭证无法保存：请先为后端配置 DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY（Base64 编码的 32 字节密钥）并重启");
         }
     }
 

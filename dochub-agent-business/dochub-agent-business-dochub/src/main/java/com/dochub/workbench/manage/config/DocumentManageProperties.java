@@ -30,7 +30,7 @@ public class DocumentManageProperties {
 
     @Data
     public static class Minio {
-        private String endpoint = "http://127.0.0.1:9000";
+        private String endpoint = "http://127.0.0.1:9201";
         private String accessKey = "minioadmin";
         private String secretKey = "minioadmin";
         private String bucketName = "dochub-document";

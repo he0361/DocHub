@@ -40,14 +40,14 @@ public class EmbeddingMigrationServiceImpl implements EmbeddingMigrationService 
     public DochubEmbeddingModelMigration start(EmbeddingRuntimeCandidate candidate, Long operator) {
         mapper.lockMigrationSlot();
         if (mapper.countActive() > 0) throw new DochubFrameException(409, "已有向量模型重建任务正在运行");
-        EmbeddingRuntimeSnapshot source = registry.captureEmbedding();
+        EmbeddingRuntimeSnapshot source = registry.findEmbedding().orElse(null);
         DochubEmbeddingModelMigration job = new DochubEmbeddingModelMigration();
         job.setId(uidGenerator.getUid());
-        job.setSourceConfigVersion(source.configVersion()); job.setTargetConfigVersion(candidate.configVersion());
-        job.setSourceModelName(source.spec().modelName()); job.setTargetModelName(candidate.spec().modelName());
-        job.setSourceDimension(source.dimension()); job.setTargetDimension(candidate.dimension());
-        job.setSourceDocumentCollection(source.documentCollection()); job.setTargetDocumentCollection(candidate.documentCollection());
-        job.setSourceMemoryCollection(source.memoryCollection()); job.setTargetMemoryCollection(candidate.memoryCollection());
+        job.setSourceConfigVersion(source == null ? 0L : source.configVersion()); job.setTargetConfigVersion(candidate.configVersion());
+        job.setSourceModelName(source == null ? "<unconfigured>" : source.spec().modelName()); job.setTargetModelName(candidate.spec().modelName());
+        job.setSourceDimension(source == null ? 0 : source.dimension()); job.setTargetDimension(candidate.dimension());
+        job.setSourceDocumentCollection(source == null ? "dochub_document" : source.documentCollection()); job.setTargetDocumentCollection(candidate.documentCollection());
+        job.setSourceMemoryCollection(source == null ? "dochub_memory" : source.memoryCollection()); job.setTargetMemoryCollection(candidate.memoryCollection());
         job.setMigrationStatus(EmbeddingMigrationStatus.PENDING.name());
         job.setDocumentTotal(0L); job.setDocumentProcessed(0L); job.setDocumentFailed(0L);
         job.setMemoryTotal(0L); job.setMemoryProcessed(0L); job.setMemoryFailed(0L);

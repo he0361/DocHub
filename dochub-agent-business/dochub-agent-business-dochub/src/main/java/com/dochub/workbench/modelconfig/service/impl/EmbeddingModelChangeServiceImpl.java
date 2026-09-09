@@ -36,6 +36,8 @@ import com.dochub.workbench.modelconfig.vo.EmbeddingModelChangeVo;
 import com.dochub.workbench.modelconfig.vo.EmbeddingModelTestVo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.javaup.exception.DochubFrameException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -47,6 +49,7 @@ import java.util.Locale;
 
 @Service
 public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeService {
+    private static final Logger log = LoggerFactory.getLogger(EmbeddingModelChangeServiceImpl.class);
     private static final String CHAT_PATH = "/v1/chat/completions";
     private static final String EMBEDDING_PATH = "/v1/embeddings";
     private final DochubAiModelConfigMapper configMapper;
@@ -82,11 +85,22 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     public EmbeddingConfigVo query(String username) {
         AdminUserEntity operator = adminGuard.require(username);
         DochubAiModelConfig active = activeConfig();
-        audit(active, operator.getId(), "QUERY", 1, null);
+        DochubAiModelConfig visible = active == null ? latestConfig() : active;
+        audit(visible, operator.getId(), "QUERY", 1, null);
         EmbeddingRuntimeSnapshot runtime = registry.findEmbedding().orElse(null);
         if (runtime == null) {
-            return new EmbeddingConfigVo(false, null, null, null, null, null, null, null, false, 0,
-                null, null, null, null, EmbeddingMigrationVo.from(migrationMapper.findLatest()));
+            EmbeddingRuntimeMetadata metadata = metadata(visible);
+            return new EmbeddingConfigVo(false, visible == null ? null : visible.getConfigVersion(),
+                visible == null ? null : visible.getDeploymentType(),
+                visible == null ? null : visible.getCompatibilityPreset(),
+                visible == null ? null : visible.getBaseUrl(), visible == null ? null : visible.getRequestPath(),
+                visible == null ? null : visible.getModelName(), visible == null ? null : visible.getTimeoutMillis(),
+                visible != null && visible.getEncryptedApiKey() != null && !visible.getEncryptedApiKey().isBlank(),
+                metadata == null ? 0 : metadata.dimension(),
+                metadata == null ? null : metadata.documentCollection(),
+                metadata == null ? null : metadata.memoryCollection(),
+                visible == null ? null : visible.getUpdatedBy(), visible == null ? null : visible.getEditTime(),
+                EmbeddingMigrationVo.from(migrationMapper.findLatest()));
         }
         return new EmbeddingConfigVo(true, runtime.configVersion(), active == null ? null : active.getDeploymentType(),
             active == null ? runtime.spec().compatibilityPreset().name() : active.getCompatibilityPreset(),
@@ -101,16 +115,23 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     @Override
     public EmbeddingModelTestVo test(String username, EmbeddingModelChangeDto dto) {
         AdminUserEntity operator = adminGuard.require(username);
-        Candidate candidate = candidate(dto, activeConfig());
+        Candidate candidate = candidate(dto, credentialConfig());
+        requireCipherForRemote(candidate.deployment());
         try {
             EmbeddingCandidateProbe.Result result = probe.test(candidate.spec());
             audit(null, operator.getId(), "TEST", 1, null, candidate.spec().baseUrl());
             return new EmbeddingModelTestVo(true, "连接与维度测试成功", result.dimension(),
-                finalUrl(candidate.spec()), EmbeddingModelChangeServiceImplSupport.changeMode(
-                    registry.captureEmbedding().spec().modelName(), candidate.spec().modelName()));
+                finalUrl(candidate.spec()), registry.findEmbedding()
+                    .map(active -> EmbeddingModelChangeServiceImplSupport.changeMode(
+                        active.spec().modelName(), candidate.spec().modelName()))
+                    .orElse("BLUE_GREEN_REBUILD"));
         } catch (RuntimeException exception) {
-            audit(null, operator.getId(), "TEST", 0, "连接或维度测试失败", candidate.spec().baseUrl());
-            return new EmbeddingModelTestVo(false, "连接或维度测试失败", 0, finalUrl(candidate.spec()), null);
+            String failure = testFailureMessage(exception);
+            log.warn("Embedding candidate test failed: endpoint={}, model={}, preset={}",
+                maskEndpoint(candidate.spec().baseUrl()), candidate.spec().modelName(),
+                candidate.spec().compatibilityPreset(), exception);
+            audit(null, operator.getId(), "TEST", 0, failure, candidate.spec().baseUrl());
+            return new EmbeddingModelTestVo(false, failure, 0, finalUrl(candidate.spec()), null);
         }
     }
 
@@ -124,16 +145,20 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
         if (migrationMapper.countActive() > 0) {
             throw new DochubFrameException(409, "已有向量模型重建任务正在运行，请等待完成或失败后再更改配置");
         }
-        DochubAiModelConfig current = activeConfig();
+        DochubAiModelConfig current = credentialConfig();
         Candidate candidate = candidate(dto, current);
+        requireCipherForRemote(candidate.deployment());
         EmbeddingCandidateProbe.Result probed = probe.test(candidate.spec());
-        EmbeddingRuntimeSnapshot source = registry.captureEmbedding();
-        String mode = EmbeddingModelChangeServiceImplSupport.changeMode(source.spec().modelName(), candidate.spec().modelName());
+        EmbeddingRuntimeSnapshot source = registry.findEmbedding().orElse(null);
+        String mode = source == null ? "BLUE_GREEN_REBUILD"
+            : EmbeddingModelChangeServiceImplSupport.changeMode(source.spec().modelName(), candidate.spec().modelName());
         long version = nextVersion();
         VersionedVectorCollectionNames names = "HOT_SWAP".equals(mode)
             ? new VersionedVectorCollectionNames(source.documentCollection(), source.memoryCollection())
-            : VersionedVectorCollectionNames.from(baseCollection(source.documentCollection()), baseCollection(source.memoryCollection()), version);
-        if ("HOT_SWAP".equals(mode) && probed.dimension() != source.dimension()) {
+            : VersionedVectorCollectionNames.from(
+                baseCollection(source == null ? "dochub_document" : source.documentCollection()),
+                baseCollection(source == null ? "dochub_memory" : source.memoryCollection()), version);
+        if (source != null && "HOT_SWAP".equals(mode) && probed.dimension() != source.dimension()) {
             throw new DochubFrameException(409, "同名向量模型返回的维度与当前集合不一致，拒绝热切换");
         }
         DochubAiModelConfig saved = persisted(candidate, version, operator.getId(), probed.dimension(), names, false);
@@ -229,6 +254,13 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
         return "";
     }
 
+    private void requireCipherForRemote(String deployment) {
+        if ("REMOTE".equals(deployment) && !cipher.isAvailable()) {
+            throw new DochubFrameException(400,
+                "远程模型凭证无法保存：请先为后端配置 DOCHUB_MODEL_CONFIG_ENCRYPTION_KEY（Base64 编码的 32 字节密钥）并重启");
+        }
+    }
+
     private DochubAiModelConfig persisted(Candidate candidate, long version, Long operator, int dimension,
                                            VersionedVectorCollectionNames names, boolean active) {
         DochubAiModelConfig config = new DochubAiModelConfig();
@@ -288,6 +320,33 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
     }
 
     private String finalUrl(ModelRuntimeSpec spec) { return spec.baseUrl().replaceAll("/+$", "") + "/" + spec.embeddingsPath().replaceAll("^/+", ""); }
+    private String testFailureMessage(RuntimeException exception) {
+        Throwable cause = exception;
+        while (cause.getCause() != null && cause.getCause() != cause) cause = cause.getCause();
+        String detail = cause.getMessage();
+        if (detail == null || detail.isBlank()) return "连接或维度测试失败，请查看服务端日志";
+        detail = detail.replaceAll("[\\r\\n\\t]+", " ").trim();
+        if (detail.length() > 300) detail = detail.substring(0, 300) + "…";
+        return "连接或维度测试失败：" + detail;
+    }
+
+    private DochubAiModelConfig latestConfig() {
+        return configMapper.selectOne(new LambdaQueryWrapper<DochubAiModelConfig>()
+            .eq(DochubAiModelConfig::getModelType, ModelType.EMBEDDING.name())
+            .eq(DochubAiModelConfig::getStatus, 1)
+            .orderByDesc(DochubAiModelConfig::getConfigVersion).last("LIMIT 1"));
+    }
+
+    private DochubAiModelConfig credentialConfig() {
+        DochubAiModelConfig active = activeConfig();
+        return active == null ? latestConfig() : active;
+    }
+
+    private EmbeddingRuntimeMetadata metadata(DochubAiModelConfig config) {
+        if (config == null || config.getOptionsJson() == null || config.getOptionsJson().isBlank()) return null;
+        try { return EmbeddingRuntimeMetadata.fromJson(objectMapper, config.getOptionsJson()); }
+        catch (RuntimeException ignored) { return null; }
+    }
     private String required(String value, String field) { if (value == null || value.isBlank()) throw new DochubFrameException(400, field + " 不能为空"); return value.trim(); }
     private String baseCollection(String collection) { return collection == null ? "dochub" : collection.replaceFirst("_v\\d+$", ""); }
     private void requireChangeDto(EmbeddingModelChangeDto dto) { if (dto == null) throw new DochubFrameException(400, "请求不能为空"); }

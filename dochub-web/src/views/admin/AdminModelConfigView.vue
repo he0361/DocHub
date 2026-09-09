@@ -18,7 +18,7 @@
       <li>选择远程 API 或本地服务及兼容预设。</li>
       <li>填写 Base URL、请求路径和模型名称，核对最终请求地址预览。</li>
       <li>远程服务填写 API Key；本地无鉴权服务可以留空。</li>
-      <li>点击“测试连接”，通过后保存。</li>
+      <li>点击“测试连接”。测试只验证候选参数，不会保存；通过后还要点击保存或确认更换。</li>
       <li>向量配置需在确认弹窗中再次输入管理员密码和指定确认短语。</li>
     </ol>
 
@@ -109,7 +109,7 @@
       <div class="card-heading">
         <div>
           <h3>向量模型</h3>
-          <p>先从后端测试候选模型；同名模型热切换，不同模型名会启动蓝绿重建。</p>
+          <p>先从后端测试候选模型；测试不会保存。测试通过并完成二次验证后，同名模型热切换，不同模型名会启动蓝绿重建。</p>
         </div>
         <span class="readonly-badge">受二次验证保护</span>
       </div>
@@ -133,8 +133,8 @@
         <label><span>超时（毫秒）</span><input v-model.number="embeddingForm.timeoutMillis" type="number" min="1" step="1000" /></label>
         <div class="form-actions form-wide">
           <button class="button secondary" type="button" :disabled="embeddingTesting" @click="testEmbedding">{{ embeddingTesting ? '测试中…' : '测试连接' }}</button>
-          <button class="button primary" type="submit" :disabled="!embeddingTest?.success">确认更换</button>
-          <span v-if="embeddingTest" class="test-status" :class="embeddingTest.success ? 'success' : 'failure'">{{ embeddingTest.success ? `测试通过，${embeddingTest.changeMode === 'HOT_SWAP' ? '将热切换' : '将后台重建'}` : embeddingTest.message }}</span>
+          <button class="button primary" type="submit" :disabled="!embeddingTest?.success">二次验证并保存</button>
+          <span v-if="embeddingTest" class="test-status" :class="embeddingTest.success ? 'success' : 'failure'">{{ embeddingTest.success ? `测试通过但尚未保存；继续二次验证后${embeddingTest.changeMode === 'HOT_SWAP' ? '热切换' : '后台重建'}` : embeddingTest.message }}</span>
         </div>
       </form>
       <EmbeddingMigrationProgress :migration="embeddingConfig.migration" />
@@ -256,7 +256,7 @@ async function loadEmbedding() {
 function embeddingPayload() { return { ...embeddingForm } }
 async function testEmbedding() {
   embeddingTesting.value = true; embeddingTest.value = null
-  try { embeddingTest.value = await modelConfigApi.testEmbedding(embeddingPayload()); showNotice(embeddingTest.value.success ? '向量模型连接与维度测试通过' : embeddingTest.value.message, embeddingTest.value.success ? 'success' : 'danger') }
+  try { embeddingTest.value = await modelConfigApi.testEmbedding(embeddingPayload()); showNotice(embeddingTest.value.success ? '向量模型测试通过但尚未保存，请继续点击“二次验证并保存”' : embeddingTest.value.message, embeddingTest.value.success ? 'success' : 'danger') }
   catch (error) { embeddingTest.value = { success: false, message: error.message || '向量模型测试失败' }; showNotice(embeddingTest.value.message, 'danger') }
   finally { embeddingTesting.value = false }
 }

@@ -4,9 +4,14 @@ import com.baidu.fsg.uid.UidGenerator;
 import com.dochub.workbench.modelconfig.data.DochubEmbeddingModelMigration;
 import com.dochub.workbench.modelconfig.mapper.DochubEmbeddingModelMigrationMapper;
 import com.dochub.workbench.modelconfig.model.EmbeddingMigrationStatus;
+import com.dochub.workbench.modelconfig.model.EmbeddingRuntimeCandidate;
+import com.dochub.workbench.modelconfig.model.CompatibilityPreset;
+import com.dochub.workbench.modelconfig.model.ModelRuntimeSpec;
+import com.dochub.workbench.modelconfig.model.ModelType;
 import com.dochub.workbench.modelconfig.runtime.ModelRuntimeRegistry;
 import com.dochub.workbench.modelconfig.service.impl.EmbeddingMigrationServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.task.TaskExecutor;
 
@@ -50,6 +55,28 @@ class EmbeddingMigrationServiceTest {
 
         assertThatThrownBy(() -> service.retry(8L)).hasMessageContaining("已有向量模型重建任务");
         verify(mapper).lockMigrationSlot();
+    }
+
+    @Test
+    void initialMigrationCanStartWithoutAnActiveEmbeddingRuntime() {
+        DochubEmbeddingModelMigrationMapper mapper = mock(DochubEmbeddingModelMigrationMapper.class);
+        UidGenerator uidGenerator = mock(UidGenerator.class);
+        when(uidGenerator.getUid()).thenReturn(42L);
+        EmbeddingMigrationServiceImpl service = new EmbeddingMigrationServiceImpl(mapper, uidGenerator,
+            new ModelRuntimeRegistry(), mock(ObjectProvider.class), mock(TaskExecutor.class));
+        ModelRuntimeSpec spec = new ModelRuntimeSpec(ModelType.EMBEDDING, CompatibilityPreset.DASHSCOPE,
+            "https://dashscope.aliyuncs.com/compatible-mode", "/v1/chat/completions", "/v1/embeddings",
+            "test-key", "text-embedding-v4", null, null, 30_000);
+        EmbeddingRuntimeCandidate candidate = new EmbeddingRuntimeCandidate(1L, 11L, mock(EmbeddingModel.class),
+            spec, 1024, "dochub_document_v1", "dochub_memory_v1");
+
+        DochubEmbeddingModelMigration job = service.start(candidate, 1L);
+
+        assertThat(job.getSourceConfigVersion()).isZero();
+        assertThat(job.getSourceModelName()).isEqualTo("<unconfigured>");
+        assertThat(job.getTargetConfigVersion()).isEqualTo(1L);
+        assertThat(job.getMigrationStatus()).isEqualTo(EmbeddingMigrationStatus.PENDING.name());
+        verify(mapper).insert(job);
     }
 
     private EmbeddingMigrationServiceImpl service(DochubEmbeddingModelMigrationMapper mapper) {
