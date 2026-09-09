@@ -150,22 +150,36 @@ public class EmbeddingModelChangeServiceImpl implements EmbeddingModelChangeServ
         requireCipherForRemote(candidate.deployment());
         EmbeddingCandidateProbe.Result probed = probe.test(candidate.spec());
         EmbeddingRuntimeSnapshot source = registry.findEmbedding().orElse(null);
-        String mode = source == null ? "BLUE_GREEN_REBUILD"
-            : EmbeddingModelChangeServiceImplSupport.changeMode(source.spec().modelName(), candidate.spec().modelName());
+        boolean firstConfiguration = source == null;
+        boolean hotSwap = !firstConfiguration
+            && "HOT_SWAP".equals(EmbeddingModelChangeServiceImplSupport.changeMode(
+                source.spec().modelName(), candidate.spec().modelName()));
         long version = nextVersion();
-        VersionedVectorCollectionNames names = "HOT_SWAP".equals(mode)
-            ? new VersionedVectorCollectionNames(source.documentCollection(), source.memoryCollection())
-            : VersionedVectorCollectionNames.from(
-                baseCollection(source == null ? "dochub_document" : source.documentCollection()),
-                baseCollection(source == null ? "dochub_memory" : source.memoryCollection()), version);
-        if (source != null && "HOT_SWAP".equals(mode) && probed.dimension() != source.dimension()) {
+        VersionedVectorCollectionNames names;
+        if (firstConfiguration) {
+            names = VersionedVectorCollectionNames.from("dochub_document", "dochub_memory", version);
+        } else if (hotSwap) {
+            names = new VersionedVectorCollectionNames(source.documentCollection(), source.memoryCollection());
+        } else {
+            names = VersionedVectorCollectionNames.from(baseCollection(source.documentCollection()),
+                baseCollection(source.memoryCollection()), version);
+        }
+        if (hotSwap && probed.dimension() != source.dimension()) {
             throw new DochubFrameException(409, "同名向量模型返回的维度与当前集合不一致，拒绝热切换");
         }
         DochubAiModelConfig saved = persisted(candidate, version, operator.getId(), probed.dimension(), names, false);
         configMapper.insert(saved);
         EmbeddingRuntimeSnapshot target = new EmbeddingRuntimeSnapshot(version, probed.model(), candidate.spec(),
             probed.dimension(), names.document(), names.memory());
-        if ("HOT_SWAP".equals(mode)) {
+        if (firstConfiguration) {
+            // Nothing was serving vectors before, so there is no migration to run: make the first
+            // runtime active immediately instead of scheduling a rebuild from <unconfigured>.
+            qdrant.ensureDocumentCollection(names.document(), probed.dimension());
+            qdrant.ensureCollection(names.memory(), probed.dimension());
+            activator.activate(null, saved, target, operator.getId(), "ACTIVATE_EMBEDDING");
+            return new EmbeddingModelChangeVo("ACTIVATED", version, null, "首次配置已直接启用，可立即构建索引");
+        }
+        if (hotSwap) {
             activator.activate(null, saved, target, operator.getId(), "ACTIVATE_EMBEDDING");
             return new EmbeddingModelChangeVo("ACTIVATED", version, null, "同名模型凭证与地址已通过维度校验并热切换");
         }
